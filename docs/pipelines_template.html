@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="icon" href="favicon-32.png" type="image/png" sizes="32x32">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<title>Azure Databricks PoC: pipelines</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --lava:#FF3621; --lava2:#FF5F46; --peach:#FABFBA; --navy:#1B3139; --muted:#5A6B72;
+    --line:#E2E6EA; --line2:#CDD5DB; --card:#FFFFFF; --wash:#F5F7F9; --uc:#2272B4; --green:#00A06B;
+  }
+  * { box-sizing:border-box; }
+  html,body { margin:0; height:100%; background:#FFFFFF; overflow:hidden;
+    font-family:"DM Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; color:var(--navy); }
+  #fit { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; }
+  #stage { position:relative; width:1280px; height:720px; background:#FFFFFF; transform-origin:center center; overflow:hidden; }
+
+  /* header */
+  .hdr { position:absolute; z-index:10; left:40px; right:40px; top:26px; height:44px; display:flex; align-items:center; justify-content:space-between; }
+  .brand { display:flex; align-items:center; gap:12px; }
+  .brand svg { width:28px; height:31px; }
+  .brand .t { font-size:19px; font-weight:700; letter-spacing:-.01em; }
+  .pills { display:flex; gap:8px; }
+  .pill { display:flex; align-items:center; gap:8px; padding:7px 13px 7px 8px; border-radius:999px; border:1px solid var(--line);
+    font-size:13px; font-weight:500; color:var(--muted); background:#fff; transition:all .4s; }
+  .pill b { width:22px; height:22px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center;
+    background:var(--wash); color:var(--muted); font-size:12px; transition:all .4s; }
+  .pill { cursor:pointer; user-select:none; }
+  .pill:hover { border-color:var(--line2); color:var(--navy); }
+  .pill.cur { border-color:var(--navy); color:var(--navy); box-shadow:0 2px 8px rgba(27,49,57,.10); }
+  .pill.cur b { background:var(--lava); color:#fff; }
+  .pill.done b { background:var(--navy); color:#fff; }
+
+  /* scenes */
+  .scene { position:absolute; inset:0; opacity:0; pointer-events:none; transition:opacity .6s ease; }
+  .scene.show { opacity:1; pointer-events:auto; }
+  .stitle { position:absolute; left:40px; top:96px; }
+  .stitle .k { font-size:13px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--lava); }
+  .stitle .h { font-size:30px; font-weight:700; letter-spacing:-.015em; margin-top:2px; }
+
+  .node { position:absolute; background:var(--card); border:1px solid var(--line); border-top:4px solid var(--line2);
+    border-radius:12px; padding:16px 18px; box-shadow:0 2px 10px rgba(27,49,57,.07);
+    display:flex; gap:11px; align-items:center; }
+  .node .ico { flex:0 0 38px; width:38px; height:38px; }
+  .node .ico svg { width:38px; height:38px; display:block; }
+  .node .name { font-size:15px; font-weight:700; line-height:1.2; }
+  .node .desc { font-size:12.5px; color:var(--muted); margin-top:4px; line-height:1.35; }
+  .node.ext { border-top-color:var(--line2); background:var(--wash); }
+  .node.db { border-top-color:var(--lava); }
+  .node.hero { border-top-color:var(--navy); }
+  .badge { position:absolute; right:10px; top:-13px; font-size:11px; font-weight:700; padding:3px 8px; border-radius:999px;
+    background:#fff; border:1px solid var(--line2); color:var(--muted); letter-spacing:.02em; }
+  .badge.on { border-color:var(--lava); color:var(--lava); }
+
+  /* reveal */
+  .rev { opacity:0; transform:translateY(8px); transition:opacity .5s ease, transform .5s ease; }
+  .rev.on { opacity:1; transform:none; }
+
+  svg.wires { position:absolute; inset:0; width:1280px; height:720px; pointer-events:none; overflow:visible; }
+  .wire { fill:none; stroke:var(--line2); stroke-width:2.2; stroke-dasharray:1; stroke-dashoffset:1; transition:stroke-dashoffset .8s ease; }
+  .wire.hot { stroke:var(--lava); }
+  .wire.dash { stroke-dasharray:none; }
+  .wire.on { stroke-dashoffset:0; }
+  .wlabel { font-size:12px; fill:var(--muted); font-weight:500; opacity:0; transition:opacity .5s; }
+  .wlabel.on { opacity:1; }
+  .pulse { fill:var(--lava); opacity:0; }
+  .pulse.on { opacity:1; }
+
+  /* endpoint card */
+  .ep { position:absolute; background:#fff; border:1px solid var(--line); border-top:4px solid var(--navy); border-radius:14px;
+    box-shadow:0 4px 16px rgba(27,49,57,.10); overflow:hidden; }
+  .ep .bar { background:var(--navy); color:#fff; display:flex; align-items:center; gap:10px; padding:11px 16px; font-weight:700; font-size:15px; }
+  .ep .bar svg { width:26px; height:26px; }
+  .ep .bar .tag { margin-left:auto; font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--peach); }
+  .step { display:flex; align-items:center; gap:12px; margin:10px 14px; padding:10px 12px; border-radius:10px;
+    border:1px solid var(--line); background:var(--wash); transition:all .45s ease; }
+  .step .n { width:26px; height:26px; flex:0 0 26px; border-radius:50%; background:#fff; border:1px solid var(--line2);
+    display:flex; align-items:center; justify-content:center; font-weight:700; font-size:13px; color:var(--muted); transition:all .45s; }
+  .step .tx { font-size:14px; font-weight:500; }
+  .step .tx span { display:block; font-size:12px; color:var(--muted); font-weight:400; margin-top:2px; }
+  .step .si { margin-left:auto; width:28px; height:28px; opacity:.35; transition:opacity .45s; }
+  .step .si svg { width:28px; height:28px; }
+  .step.on { background:#fff; border-color:var(--lava); box-shadow:0 2px 10px rgba(255,54,33,.12); }
+  .step.on .n { background:var(--lava); border-color:var(--lava); color:#fff; }
+  .step.on .si { opacity:1; }
+
+  /* request / score labels and moving envelopes */
+  .chip { position:absolute; padding:6px 11px; border-radius:8px; font-size:12.5px; font-weight:700; white-space:nowrap;
+    background:#fff; border:1.5px solid var(--lava); color:var(--navy); }
+  .chip.dark { border-color:var(--navy); }
+  .chip code, .packet code { font-family:ui-monospace,Menlo,monospace; font-weight:600; font-size:12px; }
+  .env { position:absolute; width:26px; height:26px; border-radius:7px; display:flex; align-items:center; justify-content:center;
+    box-shadow:0 3px 10px rgba(27,49,57,.2); opacity:0; transition:transform 1.5s cubic-bezier(.55,.05,.35,1), opacity .3s; }
+  .env svg { width:16px; height:16px; }
+  .env.req { background:var(--lava); } .env.res { background:var(--navy); }
+  .env.on { opacity:1; transform:translateX(var(--dx)); }
+  /* moving request / score chips (unused) */
+  .packet { position:absolute; padding:8px 12px; border-radius:9px; font-size:12.5px; font-weight:700; white-space:nowrap;
+    box-shadow:0 3px 12px rgba(27,49,57,.16); opacity:0; transition:transform 1.6s cubic-bezier(.55,.05,.35,1), opacity .3s; }
+  .packet code { font-family:"DM Mono",ui-monospace,Menlo,monospace; font-weight:500; font-size:12px; }
+  .packet.req { background:var(--lava); color:#fff; }
+  .packet.res { background:var(--navy); color:#fff; }
+  .packet.on { opacity:1; transform:translateX(var(--dx)); }
+
+  /* mini drift chart */
+  .chart { display:flex; align-items:flex-end; gap:5px; height:34px; margin-top:8px; }
+  .chart i { display:block; width:14px; border-radius:3px 3px 0 0; background:var(--peach); height:4px; transition:height .9s ease; }
+  .chart i.base { background:var(--line2); }
+  .on .chart i { height:var(--h); }
+  .on .chart i.hi { background:var(--lava); }
+
+  /* caption */
+  .cap { position:absolute; left:40px; right:40px; bottom:34px; height:56px; display:flex; align-items:center; gap:14px;
+    border-radius:12px; background:var(--wash); border:1px solid var(--line); padding:0 18px; }
+  .cap .bar { width:4px; height:28px; border-radius:2px; background:var(--lava); flex:0 0 4px; }
+  .cap .txt { font-size:17px; font-weight:500; transition:opacity .35s ease; }
+  .cap .txt b { color:var(--lava); font-weight:700; }
+
+  /* overview blocks */
+  .blk { position:absolute; top:186px; width:360px; height:318px; border-radius:16px; background:#fff; border:1px solid var(--line);
+    box-shadow:0 4px 16px rgba(27,49,57,.08); padding:18px 20px; }
+  .blk { cursor:pointer; transition:box-shadow .2s, border-color .2s; }
+  .blk:hover { border-color:var(--line2); box-shadow:0 6px 20px rgba(27,49,57,.14); }
+  .blk .num { width:34px; height:34px; border-radius:50%; background:var(--navy); color:#fff; display:flex; align-items:center; justify-content:center; font-weight:700; }
+  .blk .bt { font-size:20px; font-weight:700; margin-top:12px; }
+  .blk .bd { font-size:13.5px; color:var(--muted); margin-top:4px; line-height:1.4; }
+  .blk .icons { display:flex; gap:10px; margin-top:14px; }
+  .blk .icons svg { width:38px; height:38px; }
+  .blk .run { position:absolute; left:20px; right:20px; bottom:16px; border-top:1px dashed var(--line2); padding-top:10px; font-size:13px; }
+  .blk .run div { display:flex; justify-content:space-between; margin-top:4px; }
+  .blk .run b { font-weight:700; }
+  .blk .run .always { color:var(--lava); }
+  .blk .run .lbl { font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); }
+
+  /* intro */
+  .intro { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; }
+  .intro svg { width:58px; height:64px; }
+  .intro .a { font-size:44px; font-weight:700; letter-spacing:-.02em; margin-top:22px; }
+  .intro .b { font-size:19px; color:var(--muted); margin-top:10px; }
+  .intro .parts { display:flex; gap:14px; margin-top:30px; }
+  .intro .parts span { padding:9px 16px; border-radius:999px; border:1px solid var(--line); font-weight:500; font-size:15px; }
+  .intro .parts b { color:var(--lava); margin-right:6px; }
+
+
+  /* precomputed features zoom-in */
+  .zc { position:absolute; background:#fff; border:1px solid var(--line); border-top:4px solid var(--line2); border-radius:12px;
+    box-shadow:0 2px 10px rgba(27,49,57,.07); padding:12px 14px; }
+  .zc .zh { display:flex; align-items:center; gap:9px; font-weight:700; font-size:15px; margin-bottom:8px; }
+  .zc .zh svg { width:26px; height:26px; }
+  .zc .zs { font-size:11.5px; color:var(--muted); margin:-4px 0 8px; }
+  .kv { display:flex; justify-content:space-between; gap:10px; font-family:ui-monospace,Menlo,monospace; font-size:12.5px;
+    padding:5px 8px; border-radius:6px; transition:background .4s, color .4s; }
+  .kv span:first-child { color:var(--muted); }
+  .kv b { font-weight:600; color:var(--navy); }
+  .mk.on { background:#FFE3DE; }
+  .mk.on span:first-child { color:var(--lava); }
+  .mk2.on { background:#E5EEF1; }
+  .bigv { font-size:30px; font-weight:700; color:var(--lava); margin-top:6px; }
+  .formula { font-family:ui-monospace,Menlo,monospace; font-size:13px; background:var(--wash); border-radius:6px; padding:8px; margin-top:8px; }
+  .tagsrc { font-size:10px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; padding:1px 6px; border-radius:4px; margin-left:6px; }
+  .tagsrc.req { background:#FFE3DE; color:var(--lava); } .tagsrc.lk { background:#E5EEF1; color:var(--navy); }
+
+  /* decision strip */
+  .dec { position:absolute; background:#fff; border:1px solid var(--line); border-top:4px solid var(--green); border-radius:12px;
+    box-shadow:0 2px 10px rgba(27,49,57,.07); padding:10px 16px; }
+  .dec .row { display:flex; align-items:center; justify-content:space-between; }
+  .dec .lbl { font-weight:700; font-size:15px; }
+  .dec .ok { background:var(--green); color:#fff; font-weight:700; font-size:14px; padding:4px 12px; border-radius:999px; letter-spacing:.04em; }
+  .zones { position:relative; display:flex; height:14px; margin:22px 0 6px; }
+  .zones i:first-of-type { border-radius:7px 0 0 7px; } .zones i:last-of-type { border-radius:0 7px 7px 0; }
+  .zones i { display:block; height:100%; }
+  .zticks { display:flex; font-size:11.5px; color:var(--muted); }
+  .zticks span { flex:1; }
+  .marker { position:absolute; top:-9px; width:3px; height:32px; background:var(--navy); border-radius:2px; }
+  .marker b { position:absolute; top:-18px; left:50%; transform:translateX(-50%); font-size:12px; color:var(--navy); white-space:nowrap; }
+  .dec .note { font-size:10.5px; color:var(--muted); }
+
+  .uclink { color:var(--uc); font-weight:700; text-decoration:none; border-bottom:1px solid currentColor; white-space:nowrap; }
+  .uclink:hover { color:var(--lava); }
+  .ep .bar .uclink { color:var(--peach); font-size:12px; font-weight:700; }
+  .hint { position:absolute; right:14px; bottom:8px; font-size:10.5px; color:#B8C2C8; }
+
+  /* boundary zones: Databricks vs your AWS account */
+  .zone { position:absolute; border:1.5px dashed var(--line2); border-radius:18px; background:#FCFDFD; }
+  .zone.dbx { border-color:#F7B4AA; background:#FFFBFA; }
+  .zone.aws { border-color:#9FB2BA; background:#F8FAFB; }
+  .zone .zl { position:absolute; top:-12px; left:18px; background:#fff; padding:2px 10px; border-radius:999px; font-size:11.5px;
+    font-weight:700; letter-spacing:.07em; text-transform:uppercase; border:1px solid var(--line); }
+  .zone.dbx .zl { color:var(--lava); border-color:#F7B4AA; } .zone.aws .zl { color:var(--navy); border-color:#9FB2BA; }
+  .wtag { display:inline-block; margin-top:10px; font-size:10.5px; font-weight:700; letter-spacing:.06em; text-transform:uppercase;
+    padding:3px 9px; border-radius:999px; }
+  .wtag.dbx { background:#FFE3DE; color:var(--lava); } .wtag.aws { background:#E5EEF1; color:var(--navy); }
+  .nocall { position:absolute; display:flex; align-items:center; gap:8px; padding:7px 12px; border-radius:999px; background:#fff;
+    border:1.5px solid var(--green); color:var(--green); font-size:12.5px; font-weight:700; white-space:nowrap; }
+  .nocall svg { width:16px; height:16px; }
+  .ep.tight .step { margin:8px 14px; padding:7px 12px; }
+  .back { display:inline-flex; align-items:center; justify-content:center; width:32px; height:32px; margin-right:4px; border-radius:50%;
+    border:1px solid var(--line); color:var(--muted); text-decoration:none; background:#fff; flex:0 0 32px; }
+  .back:hover { border-color:var(--line2); color:var(--navy); }
+  .back svg { width:15px; height:15px; }
+
+  /* added for this repo */
+  .node.v { flex-direction:column; align-items:flex-start; gap:8px; padding:14px 16px; }
+  .node.v .ico { flex:0 0 auto; }
+  .zone.sub { background:#FFFFFF; border-color:#B9C7CD; }
+  .zone.sub .zl { color:var(--muted); border-color:#B9C7CD; }
+  .zone .zl { color:var(--muted); }
+  .chip.note { border-color:var(--navy); color:var(--navy); font-weight:600; }
+  .li { display:flex; justify-content:space-between; align-items:center; gap:14px; font-size:14px; padding:9px 12px;
+    border-radius:8px; border:1px solid var(--line); background:var(--wash); margin-top:8px; }
+  .li span { font-weight:700; }
+  .li em { font-style:normal; color:var(--muted); font-size:13px; text-align:right; }
+  .zc.big .zh { font-size:17px; }
+  .zc.big .zh svg { width:30px; height:30px; }
+</style>
+</head>
+<body>
+<div id="fit"><div id="stage">
+
+  <div class="hdr" id="hdr">
+    <div class="brand">{{BACK}}{{I_DATABRICKS}}<div class="t">PoC pipelines</div></div>
+    <div class="pills">
+      <div class="pill" data-p="0"><b>&#8635;</b>Overview</div>
+      <div class="pill" data-p="1"><b>1</b>Office Presence</div>
+      <div class="pill" data-p="2"><b>2</b>ClickUp</div>
+      <div class="pill" data-p="3"><b>3</b>Yield Mgmt</div>
+      <div class="pill" data-p="4"><b>4</b>Startlap Box CT</div>
+    </div>
+  </div>
+
+<section class="scene" data-scene="0" data-dur="8000">
+<div class="stitle rev" data-t="0"><div class="k">PoC pipelines</div><div class="h">Four Fabric workloads, rebuilt on Azure Databricks</div></div>
+<div class="blk rev" data-t="300" data-go="1" style="left:40px;width:290px"><div class="num">1</div><div class="bt">Office Presence</div><div class="bd">One SQL Server database, pulled</div><div class="icons">{{I_LFC}}{{I_PIPELINES}}{{I_REPORT}}</div><span class="wtag aws">Classic + serverless</span><div class="run"><div class="lbl">What runs</div><div><span>Ingestion</span><b>Lakeflow Connect</b></div><div><span>Serves</span><b>SQL warehouse</b></div></div></div>
+<div class="blk rev" data-t="900" data-go="2" style="left:340px;width:290px"><div class="num">2</div><div class="bt">ClickUp Workload</div><div class="bd">ClickUp API, pulled by your Python notebook</div><div class="icons">{{I_API}}{{I_JOBS}}{{I_REPORT}}</div><span class="wtag dbx">Serverless</span><div class="run"><div class="lbl">What runs</div><div><span>Ingestion</span><b>serverless job</b></div><div><span>VPN</span><b class="always">not needed</b></div></div></div>
+<div class="blk rev" data-t="1500" data-go="3" style="left:640px;width:290px"><div class="num">3</div><div class="bt">Yield Management</div><div class="bd">On-prem databases plus data in Fabric</div><div class="icons">{{I_ONPREM}}{{I_UC}}{{I_REPORT}}</div><span class="wtag aws">Classic + serverless</span><div class="run"><div class="lbl">What runs</div><div><span>On-prem</span><b>classic, over VPN</b></div><div><span>Fabric</span><b>OneLake federation</b></div></div></div>
+<div class="blk rev" data-t="2100" data-go="4" style="left:940px;width:290px"><div class="num">4</div><div class="bt">Startlap Box CT</div><div class="bd">Daily history plus today, pushed every 10 minutes</div><div class="icons">{{I_STREAMING}}{{I_DELTA}}{{I_DBSQL}}</div><span class="wtag dbx">Serverless</span><div class="run"><div class="lbl">What runs</div><div><span>Push</span><b>Zerobus Ingest</b></div><div><span>Queries</span><b>SQL warehouse</b></div></div></div>
+</section>
+
+<section class="scene" data-scene="1" data-dur="9500">
+<div class="stitle rev" data-t="0"><div class="k">1 &middot; Office Presence</div><div class="h">Office Presence: SQL Server to Power BI</div></div>
+<div class="zone  rev" data-t="0" style="left:24px;top:176px;width:218px;height:432px"><span class="zl">Source</span></div>
+<div class="zone dbx rev" data-t="0" style="left:262px;top:176px;width:730px;height:432px"><span class="zl">Azure Databricks</span></div>
+<div class="zone  rev" data-t="0" style="left:1012px;top:176px;width:244px;height:432px"><span class="zl">Power BI</span></div>
+<svg class="wires" viewBox="0 0 1280 720"><path id="p1" class="wire hot" pathLength="1" d="M 226 391 C 253 391, 253 283, 280 283" data-t="1600"/><path id="p2" class="wire" pathLength="1" d="M 378 358 L 378 432" data-t="3300"/><path id="p3" class="wire" pathLength="1" d="M 476 507 C 498 507, 498 391, 520 391" data-t="4900"/><path id="p4" class="wire" pathLength="1" d="M 716 391 C 739 391, 739 283, 762 283" data-t="5500"/><path id="p5" class="wire" pathLength="1" d="M 867 358 L 867 432" data-t="7100"/><path id="p6" class="wire hot" pathLength="1" d="M 972 507 C 1002 507, 1002 391, 1032 391" data-t="7600"/><circle class="pulse" r="5" data-t="1800"><animateMotion dur="1.2s" repeatCount="indefinite" begin="indefinite"><mpath href="#p1"/></animateMotion></circle><circle class="pulse" r="5" data-t="7800"><animateMotion dur="1.2s" repeatCount="indefinite" begin="indefinite"><mpath href="#p6"/></animateMotion></circle></svg>
+<div class="node ext v rev" data-t="300" style="left:40px;top:316px;width:186px;height:150px"><span class="badge">on-prem: to confirm</span><div class="ico">{{I_DB}}</div><div><div class="name">SQL Server</div><div class="desc">Office Presence database, pulled</div></div></div>
+<div class="node db v rev" data-t="1300" style="left:280px;top:208px;width:196px;height:150px"><span class="badge on">classic, your VNet</span><div class="ico">{{I_LFC}}</div><div><div class="name">Ingestion gateway</div><div class="desc">Lakeflow Connect: reads changes with change tracking or CDC</div></div></div>
+<div class="node db v rev" data-t="3100" style="left:280px;top:432px;width:196px;height:150px"><span class="badge">serverless</span><div class="ico">{{I_LFC}}</div><div><div class="name">Ingestion pipeline</div><div class="desc">Applies the changes to streaming tables</div></div></div>
+<div class="node db v rev" data-t="4700" style="left:520px;top:316px;width:196px;height:150px"><span class="badge">serverless</span><div class="ico">{{I_PIPELINES}}</div><div><div class="name">Lakeflow pipeline</div><div class="desc">Silver and gold tables, with data quality checks</div></div></div>
+<div class="node db v rev" data-t="5300" style="left:762px;top:208px;width:210px;height:150px"><div class="ico">{{I_METRIC}}</div><div><div class="name">Metric view</div><div class="desc">Office Presence KPIs, defined once</div></div></div>
+<div class="node db v rev" data-t="6900" style="left:762px;top:432px;width:210px;height:150px"><span class="badge">serverless</span><div class="ico">{{I_DBSQL}}</div><div><div class="name">SQL warehouse</div><div class="desc">Serverless, serves Power BI</div></div></div>
+<div class="node ext v rev" data-t="7400" style="left:1032px;top:316px;width:208px;height:150px"><div class="ico">{{I_REPORT}}</div><div><div class="name">Office Presence report</div><div class="desc">DirectQuery or Import</div></div></div>
+</section>
+
+<section class="scene" data-scene="2" data-dur="8500">
+<div class="stitle rev" data-t="0"><div class="k">2 &middot; ClickUp Workload</div><div class="h">ClickUp Workload: API to Power BI, all serverless</div></div>
+<div class="zone  rev" data-t="0" style="left:24px;top:176px;width:218px;height:432px"><span class="zl">Source</span></div>
+<div class="zone dbx rev" data-t="0" style="left:262px;top:176px;width:730px;height:432px"><span class="zl">Azure Databricks</span></div>
+<div class="zone  rev" data-t="0" style="left:1012px;top:176px;width:244px;height:432px"><span class="zl">Power BI</span></div>
+<svg class="wires" viewBox="0 0 1280 720"><path id="q1" class="wire hot" pathLength="1" d="M 226 391 L 280 391" data-t="1600"/><path id="q2" class="wire" pathLength="1" d="M 476 391 L 520 391" data-t="3500"/><path id="q3" class="wire" pathLength="1" d="M 716 391 C 739 391, 739 283, 762 283" data-t="4900"/><path id="q4" class="wire" pathLength="1" d="M 867 358 L 867 432" data-t="5300"/><path id="q5" class="wire hot" pathLength="1" d="M 972 507 C 1002 507, 1002 391, 1032 391" data-t="5800"/><circle class="pulse" r="5" data-t="1800"><animateMotion dur="1.2s" repeatCount="indefinite" begin="indefinite"><mpath href="#q1"/></animateMotion></circle><circle class="pulse" r="5" data-t="6000"><animateMotion dur="1.2s" repeatCount="indefinite" begin="indefinite"><mpath href="#q5"/></animateMotion></circle></svg>
+<div class="node ext v rev" data-t="300" style="left:40px;top:316px;width:186px;height:150px"><div class="ico">{{I_API}}</div><div><div class="name">ClickUp API</div><div class="desc">Tasks and workload, over REST</div></div></div>
+<div class="node db v rev" data-t="1300" style="left:280px;top:316px;width:196px;height:150px"><span class="badge on">serverless</span><div class="ico">{{I_JOBS}}</div><div><div class="name">Lakeflow Job</div><div class="desc">Your Python notebook, on a schedule. Token in a secret scope</div></div></div>
+<div class="nocall rev" data-t="2300" style="left:280px;top:500px"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="#00A06B" stroke-width="2"/><path d="M7 12.5l3.2 3.2L17 9" stroke="#00A06B" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>No VPN needed: ClickUp is a public API</div>
+<div class="node db v rev" data-t="3300" style="left:520px;top:316px;width:196px;height:150px"><span class="badge">serverless</span><div class="ico">{{I_PIPELINES}}</div><div><div class="name">Lakeflow pipeline</div><div class="desc">Raw API responses to silver and gold</div></div></div>
+<div class="node db v rev" data-t="4700" style="left:762px;top:208px;width:210px;height:150px"><div class="ico">{{I_METRIC}}</div><div><div class="name">Metric view</div><div class="desc">Workload KPIs, defined once</div></div></div>
+<div class="node db v rev" data-t="5100" style="left:762px;top:432px;width:210px;height:150px"><span class="badge">serverless</span><div class="ico">{{I_DBSQL}}</div><div><div class="name">SQL warehouse</div><div class="desc">Serverless, serves Power BI</div></div></div>
+<div class="node ext v rev" data-t="5600" style="left:1032px;top:316px;width:208px;height:150px"><div class="ico">{{I_REPORT}}</div><div><div class="name">ClickUp Workload report</div><div class="desc">DirectQuery or Import</div></div></div>
+</section>
+
+<section class="scene" data-scene="3" data-dur="9500">
+<div class="stitle rev" data-t="0"><div class="k">3 &middot; Yield Management</div><div class="h">Yield Management: on-prem and Fabric, one model</div></div>
+<div class="zone  rev" data-t="0" style="left:24px;top:176px;width:218px;height:432px"><span class="zl">Sources</span></div>
+<div class="zone dbx rev" data-t="0" style="left:262px;top:176px;width:730px;height:432px"><span class="zl">Azure Databricks</span></div>
+<div class="zone  rev" data-t="0" style="left:1012px;top:176px;width:244px;height:432px"><span class="zl">Power BI</span></div>
+<svg class="wires" viewBox="0 0 1280 720"><path id="y1" class="wire hot" pathLength="1" d="M 226 283 L 280 283" data-t="1700"/><path id="y2" class="wire hot" pathLength="1" d="M 226 507 L 280 507" data-t="3300"/><path id="y3" class="wire" pathLength="1" d="M 476 283 C 498 283, 498 391, 520 391" data-t="4900"/><path id="y4" class="wire" pathLength="1" d="M 476 507 C 498 507, 498 391, 520 391" data-t="5000"/><path id="y5" class="wire" pathLength="1" d="M 716 391 C 739 391, 739 283, 762 283" data-t="6500"/><path id="y6" class="wire" pathLength="1" d="M 867 358 L 867 432" data-t="6900"/><path id="y7" class="wire hot" pathLength="1" d="M 972 507 C 1002 507, 1002 391, 1032 391" data-t="7400"/><circle class="pulse" r="5" data-t="1900"><animateMotion dur="1.2s" repeatCount="indefinite" begin="indefinite"><mpath href="#y1"/></animateMotion></circle><circle class="pulse" r="5" data-t="3500"><animateMotion dur="1.2s" repeatCount="indefinite" begin="indefinite"><mpath href="#y2"/></animateMotion></circle><circle class="pulse" r="5" data-t="7600"><animateMotion dur="1.2s" repeatCount="indefinite" begin="indefinite"><mpath href="#y7"/></animateMotion></circle></svg>
+<div class="node ext v rev" data-t="300" style="left:40px;top:208px;width:186px;height:150px"><div class="ico">{{I_ONPREM}}</div><div><div class="name">On-prem databases</div><div class="desc">Several sources, pulled over the VPN</div></div></div>
+<div class="node ext v rev" data-t="400" style="left:40px;top:432px;width:186px;height:150px"><span class="badge">to confirm</span><div class="ico">{{I_TILES}}</div><div><div class="name">Fabric data</div><div class="desc">Lakehouse or Warehouse in OneLake</div></div></div>
+<div class="node db v rev" data-t="1500" style="left:280px;top:208px;width:196px;height:150px"><span class="badge on">classic, your VNet</span><div class="ico">{{I_LFC}}</div><div><div class="name">Lakeflow Connect</div><div class="desc">Or JDBC, on classic compute in your VNet</div></div></div>
+<div class="node db v rev" data-t="3100" style="left:280px;top:432px;width:196px;height:150px"><div class="ico">{{I_UC}}</div><div><div class="name">OneLake federation</div><div class="desc">Foreign catalog in Unity Catalog: read-only, no copy</div></div></div>
+<div class="node db v rev" data-t="4700" style="left:520px;top:316px;width:196px;height:150px"><span class="badge">serverless</span><div class="ico">{{I_PIPELINES}}</div><div><div class="name">Lakeflow pipeline</div><div class="desc">Joins all sources into one yield model</div></div></div>
+<div class="node db v rev" data-t="6300" style="left:762px;top:208px;width:210px;height:150px"><div class="ico">{{I_METRIC}}</div><div><div class="name">Metric views</div><div class="desc">Yield KPIs, one definition for every report</div></div></div>
+<div class="node db v rev" data-t="6700" style="left:762px;top:432px;width:210px;height:150px"><span class="badge">serverless</span><div class="ico">{{I_DBSQL}}</div><div><div class="name">SQL warehouse</div><div class="desc">Serverless, serves Power BI</div></div></div>
+<div class="node ext v rev" data-t="7200" style="left:1032px;top:316px;width:208px;height:150px"><div class="ico">{{I_REPORT}}</div><div><div class="name">Yield Management report</div><div class="desc">DirectQuery or Import</div></div></div>
+</section>
+
+<section class="scene" data-scene="4" data-dur="9500">
+<div class="stitle rev" data-t="0"><div class="k">4 &middot; Startlap Box CT</div><div class="h">Startlap Box CT: history plus today, always current</div></div>
+<div class="zone  rev" data-t="0" style="left:24px;top:176px;width:218px;height:432px"><span class="zl">Source</span></div>
+<div class="zone dbx rev" data-t="0" style="left:262px;top:176px;width:730px;height:432px"><span class="zl">Azure Databricks</span></div>
+<div class="zone  rev" data-t="0" style="left:1012px;top:176px;width:244px;height:432px"><span class="zl">Power BI</span></div>
+<svg class="wires" viewBox="0 0 1280 720"><path id="z1" class="wire hot" pathLength="1" d="M 226 391 C 253 391, 253 283, 280 283" data-t="1500"/><path id="z2" class="wire hot" pathLength="1" d="M 476 283 L 520 283" data-t="2200"/><path id="z3" class="wire" pathLength="1" d="M 560 358 C 560 400, 420 390, 420 432" data-t="3400"/><path id="z4" class="wire" pathLength="1" d="M 476 507 L 520 507" data-t="3900"/><path id="z5" class="wire hot" pathLength="1" d="M 716 283 L 762 283" data-t="5300"/><path id="z6" class="wire" pathLength="1" d="M 716 507 C 739 507, 739 305, 762 305" data-t="5500"/><path id="z7" class="wire" pathLength="1" d="M 867 358 L 867 432" data-t="6900"/><path id="z8" class="wire hot" pathLength="1" d="M 972 507 C 1002 507, 1002 391, 1032 391" data-t="7400"/><circle class="pulse" r="5" data-t="1700"><animateMotion dur="1.0s" repeatCount="indefinite" begin="indefinite"><mpath href="#z1"/></animateMotion></circle><circle class="pulse" r="5" data-t="2400"><animateMotion dur="0.8s" repeatCount="indefinite" begin="indefinite"><mpath href="#z2"/></animateMotion></circle><circle class="pulse" r="5" data-t="5600"><animateMotion dur="0.8s" repeatCount="indefinite" begin="indefinite"><mpath href="#z5"/></animateMotion></circle><circle class="pulse" r="5" data-t="7600"><animateMotion dur="1.2s" repeatCount="indefinite" begin="indefinite"><mpath href="#z8"/></animateMotion></circle></svg>
+<div class="node ext v rev" data-t="300" style="left:40px;top:316px;width:186px;height:150px"><span class="badge">to confirm</span><div class="ico">{{I_DB}}</div><div><div class="name">Your producer</div><div class="desc">Pushes today's records every 10 minutes</div></div></div>
+<div class="node db v rev" data-t="1300" style="left:280px;top:208px;width:196px;height:150px"><span class="badge on">serverless</span><div class="ico">{{I_STREAMING}}</div><div><div class="name">Zerobus Ingest</div><div class="desc">Push API (SDK or REST): records land in Delta within seconds</div></div></div>
+<div class="node db v rev" data-t="2000" style="left:520px;top:208px;width:196px;height:150px"><div class="ico">{{I_DELTA}}</div><div><div class="name">today</div><div class="desc">Today's records, updated every 10 minutes</div></div></div>
+<div class="node db v rev" data-t="3600" style="left:280px;top:432px;width:196px;height:150px"><span class="badge">on schedule</span><div class="ico">{{I_JOBS}}</div><div><div class="name">Nightly job</div><div class="desc">Moves the closed day into history</div></div></div>
+<div class="node db v rev" data-t="4100" style="left:520px;top:432px;width:196px;height:150px"><div class="ico">{{I_DELTA}}</div><div><div class="name">history</div><div class="desc">All days up to yesterday</div></div></div>
+<div class="node db v rev" data-t="5100" style="left:762px;top:208px;width:210px;height:150px"><div class="ico">{{I_SYNC}}</div><div><div class="name">Lambda view</div><div class="desc">history UNION ALL today: one source for the report</div></div></div>
+<div class="node db v rev" data-t="6700" style="left:762px;top:432px;width:210px;height:150px"><span class="badge">serverless</span><div class="ico">{{I_DBSQL}}</div><div><div class="name">SQL warehouse</div><div class="desc">Serverless. Lakehouse//RT (Beta) if many users</div></div></div>
+<div class="node ext v rev" data-t="7200" style="left:1032px;top:316px;width:208px;height:150px"><div class="ico">{{I_REPORT}}</div><div><div class="name">Startlap Box CT report</div><div class="desc">DirectQuery: always current</div></div></div>
+</section>
+
+  <div class="cap"><div class="bar"></div><div class="txt" id="cap"></div></div>
+  <div class="hint">Space: pause &nbsp; Left/Right: part</div>
+</div></div>
+
+<script>
+const CAPS = {
+  0: [[0, 'Four Fabric workloads, rebuilt <b>end to end</b> on Azure Databricks']],
+  1: [[0, 'Office Presence: one <b>SQL Server</b> database, pulled'],
+      [1200, 'Lakeflow Connect: the <b>gateway runs on classic compute</b> in your VNet, over the VPN'],
+      [3000, 'A <b>serverless</b> ingestion pipeline applies the changes to Delta tables'],
+      [4600, 'A Lakeflow pipeline builds <b>silver and gold</b>; a metric view defines the KPIs'],
+      [6800, 'Power BI queries a <b>serverless SQL warehouse</b>']],
+  2: [[0, 'ClickUp Workload: data pulled from the <b>ClickUp API</b>'],
+      [1200, 'Your Python notebook runs as a <b>serverless Lakeflow Job</b>, on a schedule'],
+      [3200, 'A Lakeflow pipeline turns the raw responses into <b>silver and gold</b>'],
+      [4600, 'A metric view defines the KPIs; Power BI queries the <b>SQL warehouse</b>']],
+  3: [[0, 'Yield Management: <b>several sources</b>, on-prem and in Fabric'],
+      [1400, 'On-prem databases come in over the VPN, on <b>classic compute</b>'],
+      [3000, 'Fabric data is read in place with <b>OneLake catalog federation</b>: no copy'],
+      [4600, 'One Lakeflow pipeline joins them into a <b>single yield model</b>'],
+      [6200, 'Metric views keep <b>one definition</b> per KPI for Power BI']],
+  4: [[0, 'Startlap Box CT: today\'s records are <b>pushed every 10 minutes</b>'],
+      [1200, '<b>Zerobus Ingest</b> writes them straight into a Delta table, within seconds'],
+      [3200, 'A nightly job moves the closed day into <b>history</b>'],
+      [5000, 'The <b>lambda view</b> unions history and today: one source for the report'],
+      [6600, 'Frequent DirectQuery hits a <b>serverless SQL warehouse</b>']]
+};
+const scenes = [...document.querySelectorAll('.scene')];
+const capEl = document.getElementById('cap');
+const MODE = new URLSearchParams(location.search).get('mode') || '{{MODE}}';
+let cur = -1, step = 0, timers = [], paused = false;
+
+function clearTimers(){ timers.forEach(clearTimeout); timers = []; }
+function setCap(html, instant){
+  if (instant){ capEl.innerHTML = html; capEl.style.opacity = 1; return; }
+  capEl.style.opacity = 0; setTimeout(() => { capEl.innerHTML = html; capEl.style.opacity = 1; }, 250);
+}
+function reveal(el){
+  el.classList.add('on');
+  if (el.tagName === 'path' && el.classList.contains('wire')) el.setAttribute('marker-end', 'url(#' + (el.classList.contains('hot') ? 'ah' : 'ag') + ')');
+  const am = el.querySelector && el.querySelector('animateMotion');
+  if (am) am.beginElement();
+}
+function reset(sc){
+  sc.querySelectorAll('.rev,.wire,.wlabel,.pulse,.mk,.mk2').forEach(e => { e.classList.remove('on'); if (e.tagName === 'path') e.removeAttribute('marker-end'); });
+}
+function pills(i){
+  document.querySelectorAll('.pill').forEach(p => {
+    const n = +p.dataset.p; p.classList.toggle('cur', n === i); p.classList.toggle('done', n < i);
+  });
+}
+function enter(i){
+  clearTimers();
+  scenes.forEach(s => s.classList.remove('show'));
+  const sc = scenes[i]; reset(sc); sc.classList.add('show'); cur = i; pills(i);
+  return sc;
+}
+function bounds(i){ return (CAPS[i] || [[0, '']]).map(c => c[0]); }
+function stepEls(sc, i, k){
+  const b = bounds(i), lo = b[k], hi = k + 1 < b.length ? b[k + 1] : Infinity;
+  return [...sc.querySelectorAll('[data-t]')].filter(e => +e.dataset.t >= lo && +e.dataset.t < hi).map(e => [e, +e.dataset.t - lo]);
+}
+
+/* auto mode: timed playback, loops */
+function show(i, staticMode){
+  const sc = enter(i);
+  const els = [...sc.querySelectorAll('[data-t]')];
+  if (staticMode){ els.forEach(reveal); const c = CAPS[i]; capEl.innerHTML = c[c.length-1][1]; return; }
+  els.forEach(e => timers.push(setTimeout(() => reveal(e), +e.dataset.t + 200)));
+  (CAPS[i] || []).forEach(([t, html]) => timers.push(setTimeout(() => setCap(html), t)));
+  timers.push(setTimeout(() => { if (!paused) show((i + 1) % scenes.length); }, +sc.dataset.dur));
+}
+
+/* presenter mode: one key press = one step */
+function present(i, k, animate){
+  const sc = (i !== cur || !animate) ? enter(i) : scenes[i];
+  clearTimers(); step = k;
+  if (!animate){
+    for (let j = 0; j <= k; j++) stepEls(sc, i, j).forEach(([e]) => reveal(e));
+  } else {
+    // finish earlier steps instantly (a fast key press must not leave anything hidden), then animate this step
+    for (let j = 0; j < k; j++) stepEls(sc, i, j).forEach(([e]) => { if (!e.classList.contains('on')) reveal(e); });
+    stepEls(sc, i, k).forEach(([e, d]) => timers.push(setTimeout(() => reveal(e), d + 150)));
+  }
+  setCap(CAPS[i][k][1], !animate);
+  progress();
+}
+function next(){
+  if (step + 1 < bounds(cur).length) present(cur, step + 1, true);
+  else if (cur + 1 < scenes.length) { enter(cur + 1); present(cur, 0, true); }
+}
+function prev(){
+  if (step > 0) present(cur, step - 1, false);
+  else if (cur > 0) present(cur - 1, bounds(cur - 1).length - 1, false);
+}
+function partName(i){
+  const p = document.querySelector('.pill[data-p="' + i + '"]');
+  return p ? p.lastChild.textContent.trim() : 'Part ' + i;
+}
+function progress(){
+  const h = document.querySelector('.hint'); if (!h || MODE !== 'present') return;
+  h.textContent = partName(cur) + '  ' + (step + 1) + '/' + bounds(cur).length + '   ·   click a tab, or use the arrow keys';
+}
+
+// arrow markers
+const svgns = 'http://www.w3.org/2000/svg';
+const defs = document.createElementNS(svgns, 'svg'); defs.setAttribute('width', 0); defs.setAttribute('height', 0); defs.style.position = 'absolute';
+defs.innerHTML = '<defs><marker id="ag" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#CDD5DB"/></marker><marker id="ah" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#FF3621"/></marker></defs>';
+document.body.prepend(defs);
+
+function fit(){ const s = Math.min(innerWidth / 1280, innerHeight / 720); document.getElementById('stage').style.transform = 'scale(' + s + ')'; }
+addEventListener('resize', fit); fit();
+addEventListener('keydown', e => {
+  if (MODE === 'present'){
+    if (['ArrowRight','Space','PageDown','Enter','ArrowDown'].includes(e.code)){ e.preventDefault(); next(); }
+    if (['ArrowLeft','PageUp','Backspace','ArrowUp'].includes(e.code)){ e.preventDefault(); prev(); }
+    if (/^Digit[0-9]$/.test(e.code) && +e.code.slice(5) < scenes.length) { const i = +e.code.slice(5); enter(i); present(i, bounds(i).length - 1, false); }
+    if (e.code === 'Home') { enter(0); present(0, 0, true); }
+    if (e.code === 'KeyR') { const i = cur; enter(i); present(i, 0, true); }
+    return;
+  }
+  if (e.code === 'Space'){ paused = !paused; if (!paused) show(cur); }
+  if (e.code === 'ArrowRight') show((cur + 1) % scenes.length);
+  if (e.code === 'ArrowLeft') show((cur - 1 + scenes.length) % scenes.length);
+  if (/^Digit[0-9]$/.test(e.code) && +e.code.slice(5) < scenes.length) show(+e.code.slice(5));
+});
+if (MODE === 'present') addEventListener('click', next);
+// links open in a new tab without advancing the presentation
+document.querySelectorAll('a.uclink').forEach(a => a.addEventListener('click', e => e.stopPropagation()));
+// overview cards open their part
+document.querySelectorAll('.blk[data-go]').forEach(c => c.addEventListener('click', e => {
+  e.stopPropagation();
+  const i = +c.dataset.go;
+  if (MODE === 'present') { enter(i); present(i, bounds(i).length - 1, false); } else { paused = true; show(i, true); }
+}));
+// tabs: click to open a part immediately, fully shown
+document.querySelectorAll('.pill').forEach(p => p.addEventListener('click', e => {
+  e.stopPropagation();
+  const i = +p.dataset.p;
+  if (MODE === 'present') { enter(i); present(i, bounds(i).length - 1, false); }
+  else { paused = true; show(i, true); }
+}));
+const q = new URLSearchParams(location.search);
+if (q.has('nohint')) document.querySelector('.hint').style.display = 'none';
+const first = q.has('scene') ? +q.get('scene') : 0;
+if (MODE === 'present') { enter(first); present(first, 0, true); }
+else show(first, q.has('static'));
+</script>
+</body>
+</html>

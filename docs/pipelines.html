@@ -1,0 +1,781 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="icon" href="favicon-32.png" type="image/png" sizes="32x32">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<title>Azure Databricks PoC: pipelines</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --lava:#FF3621; --lava2:#FF5F46; --peach:#FABFBA; --navy:#1B3139; --muted:#5A6B72;
+    --line:#E2E6EA; --line2:#CDD5DB; --card:#FFFFFF; --wash:#F5F7F9; --uc:#2272B4; --green:#00A06B;
+  }
+  * { box-sizing:border-box; }
+  html,body { margin:0; height:100%; background:#FFFFFF; overflow:hidden;
+    font-family:"DM Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; color:var(--navy); }
+  #fit { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; }
+  #stage { position:relative; width:1280px; height:720px; background:#FFFFFF; transform-origin:center center; overflow:hidden; }
+
+  /* header */
+  .hdr { position:absolute; z-index:10; left:40px; right:40px; top:26px; height:44px; display:flex; align-items:center; justify-content:space-between; }
+  .brand { display:flex; align-items:center; gap:12px; }
+  .brand svg { width:28px; height:31px; }
+  .brand .t { font-size:19px; font-weight:700; letter-spacing:-.01em; }
+  .pills { display:flex; gap:8px; }
+  .pill { display:flex; align-items:center; gap:8px; padding:7px 13px 7px 8px; border-radius:999px; border:1px solid var(--line);
+    font-size:13px; font-weight:500; color:var(--muted); background:#fff; transition:all .4s; }
+  .pill b { width:22px; height:22px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center;
+    background:var(--wash); color:var(--muted); font-size:12px; transition:all .4s; }
+  .pill { cursor:pointer; user-select:none; }
+  .pill:hover { border-color:var(--line2); color:var(--navy); }
+  .pill.cur { border-color:var(--navy); color:var(--navy); box-shadow:0 2px 8px rgba(27,49,57,.10); }
+  .pill.cur b { background:var(--lava); color:#fff; }
+  .pill.done b { background:var(--navy); color:#fff; }
+
+  /* scenes */
+  .scene { position:absolute; inset:0; opacity:0; pointer-events:none; transition:opacity .6s ease; }
+  .scene.show { opacity:1; pointer-events:auto; }
+  .stitle { position:absolute; left:40px; top:96px; }
+  .stitle .k { font-size:13px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--lava); }
+  .stitle .h { font-size:30px; font-weight:700; letter-spacing:-.015em; margin-top:2px; }
+
+  .node { position:absolute; background:var(--card); border:1px solid var(--line); border-top:4px solid var(--line2);
+    border-radius:12px; padding:16px 18px; box-shadow:0 2px 10px rgba(27,49,57,.07);
+    display:flex; gap:11px; align-items:center; }
+  .node .ico { flex:0 0 38px; width:38px; height:38px; }
+  .node .ico svg { width:38px; height:38px; display:block; }
+  .node .name { font-size:15px; font-weight:700; line-height:1.2; }
+  .node .desc { font-size:12.5px; color:var(--muted); margin-top:4px; line-height:1.35; }
+  .node.ext { border-top-color:var(--line2); background:var(--wash); }
+  .node.db { border-top-color:var(--lava); }
+  .node.hero { border-top-color:var(--navy); }
+  .badge { position:absolute; right:10px; top:-13px; font-size:11px; font-weight:700; padding:3px 8px; border-radius:999px;
+    background:#fff; border:1px solid var(--line2); color:var(--muted); letter-spacing:.02em; }
+  .badge.on { border-color:var(--lava); color:var(--lava); }
+
+  /* reveal */
+  .rev { opacity:0; transform:translateY(8px); transition:opacity .5s ease, transform .5s ease; }
+  .rev.on { opacity:1; transform:none; }
+
+  svg.wires { position:absolute; inset:0; width:1280px; height:720px; pointer-events:none; overflow:visible; }
+  .wire { fill:none; stroke:var(--line2); stroke-width:2.2; stroke-dasharray:1; stroke-dashoffset:1; transition:stroke-dashoffset .8s ease; }
+  .wire.hot { stroke:var(--lava); }
+  .wire.dash { stroke-dasharray:none; }
+  .wire.on { stroke-dashoffset:0; }
+  .wlabel { font-size:12px; fill:var(--muted); font-weight:500; opacity:0; transition:opacity .5s; }
+  .wlabel.on { opacity:1; }
+  .pulse { fill:var(--lava); opacity:0; }
+  .pulse.on { opacity:1; }
+
+  /* endpoint card */
+  .ep { position:absolute; background:#fff; border:1px solid var(--line); border-top:4px solid var(--navy); border-radius:14px;
+    box-shadow:0 4px 16px rgba(27,49,57,.10); overflow:hidden; }
+  .ep .bar { background:var(--navy); color:#fff; display:flex; align-items:center; gap:10px; padding:11px 16px; font-weight:700; font-size:15px; }
+  .ep .bar svg { width:26px; height:26px; }
+  .ep .bar .tag { margin-left:auto; font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--peach); }
+  .step { display:flex; align-items:center; gap:12px; margin:10px 14px; padding:10px 12px; border-radius:10px;
+    border:1px solid var(--line); background:var(--wash); transition:all .45s ease; }
+  .step .n { width:26px; height:26px; flex:0 0 26px; border-radius:50%; background:#fff; border:1px solid var(--line2);
+    display:flex; align-items:center; justify-content:center; font-weight:700; font-size:13px; color:var(--muted); transition:all .45s; }
+  .step .tx { font-size:14px; font-weight:500; }
+  .step .tx span { display:block; font-size:12px; color:var(--muted); font-weight:400; margin-top:2px; }
+  .step .si { margin-left:auto; width:28px; height:28px; opacity:.35; transition:opacity .45s; }
+  .step .si svg { width:28px; height:28px; }
+  .step.on { background:#fff; border-color:var(--lava); box-shadow:0 2px 10px rgba(255,54,33,.12); }
+  .step.on .n { background:var(--lava); border-color:var(--lava); color:#fff; }
+  .step.on .si { opacity:1; }
+
+  /* request / score labels and moving envelopes */
+  .chip { position:absolute; padding:6px 11px; border-radius:8px; font-size:12.5px; font-weight:700; white-space:nowrap;
+    background:#fff; border:1.5px solid var(--lava); color:var(--navy); }
+  .chip.dark { border-color:var(--navy); }
+  .chip code, .packet code { font-family:ui-monospace,Menlo,monospace; font-weight:600; font-size:12px; }
+  .env { position:absolute; width:26px; height:26px; border-radius:7px; display:flex; align-items:center; justify-content:center;
+    box-shadow:0 3px 10px rgba(27,49,57,.2); opacity:0; transition:transform 1.5s cubic-bezier(.55,.05,.35,1), opacity .3s; }
+  .env svg { width:16px; height:16px; }
+  .env.req { background:var(--lava); } .env.res { background:var(--navy); }
+  .env.on { opacity:1; transform:translateX(var(--dx)); }
+  /* moving request / score chips (unused) */
+  .packet { position:absolute; padding:8px 12px; border-radius:9px; font-size:12.5px; font-weight:700; white-space:nowrap;
+    box-shadow:0 3px 12px rgba(27,49,57,.16); opacity:0; transition:transform 1.6s cubic-bezier(.55,.05,.35,1), opacity .3s; }
+  .packet code { font-family:"DM Mono",ui-monospace,Menlo,monospace; font-weight:500; font-size:12px; }
+  .packet.req { background:var(--lava); color:#fff; }
+  .packet.res { background:var(--navy); color:#fff; }
+  .packet.on { opacity:1; transform:translateX(var(--dx)); }
+
+  /* mini drift chart */
+  .chart { display:flex; align-items:flex-end; gap:5px; height:34px; margin-top:8px; }
+  .chart i { display:block; width:14px; border-radius:3px 3px 0 0; background:var(--peach); height:4px; transition:height .9s ease; }
+  .chart i.base { background:var(--line2); }
+  .on .chart i { height:var(--h); }
+  .on .chart i.hi { background:var(--lava); }
+
+  /* caption */
+  .cap { position:absolute; left:40px; right:40px; bottom:34px; height:56px; display:flex; align-items:center; gap:14px;
+    border-radius:12px; background:var(--wash); border:1px solid var(--line); padding:0 18px; }
+  .cap .bar { width:4px; height:28px; border-radius:2px; background:var(--lava); flex:0 0 4px; }
+  .cap .txt { font-size:17px; font-weight:500; transition:opacity .35s ease; }
+  .cap .txt b { color:var(--lava); font-weight:700; }
+
+  /* overview blocks */
+  .blk { position:absolute; top:186px; width:360px; height:318px; border-radius:16px; background:#fff; border:1px solid var(--line);
+    box-shadow:0 4px 16px rgba(27,49,57,.08); padding:18px 20px; }
+  .blk { cursor:pointer; transition:box-shadow .2s, border-color .2s; }
+  .blk:hover { border-color:var(--line2); box-shadow:0 6px 20px rgba(27,49,57,.14); }
+  .blk .num { width:34px; height:34px; border-radius:50%; background:var(--navy); color:#fff; display:flex; align-items:center; justify-content:center; font-weight:700; }
+  .blk .bt { font-size:20px; font-weight:700; margin-top:12px; }
+  .blk .bd { font-size:13.5px; color:var(--muted); margin-top:4px; line-height:1.4; }
+  .blk .icons { display:flex; gap:10px; margin-top:14px; }
+  .blk .icons svg { width:38px; height:38px; }
+  .blk .run { position:absolute; left:20px; right:20px; bottom:16px; border-top:1px dashed var(--line2); padding-top:10px; font-size:13px; }
+  .blk .run div { display:flex; justify-content:space-between; margin-top:4px; }
+  .blk .run b { font-weight:700; }
+  .blk .run .always { color:var(--lava); }
+  .blk .run .lbl { font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); }
+
+  /* intro */
+  .intro { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; }
+  .intro svg { width:58px; height:64px; }
+  .intro .a { font-size:44px; font-weight:700; letter-spacing:-.02em; margin-top:22px; }
+  .intro .b { font-size:19px; color:var(--muted); margin-top:10px; }
+  .intro .parts { display:flex; gap:14px; margin-top:30px; }
+  .intro .parts span { padding:9px 16px; border-radius:999px; border:1px solid var(--line); font-weight:500; font-size:15px; }
+  .intro .parts b { color:var(--lava); margin-right:6px; }
+
+
+  /* precomputed features zoom-in */
+  .zc { position:absolute; background:#fff; border:1px solid var(--line); border-top:4px solid var(--line2); border-radius:12px;
+    box-shadow:0 2px 10px rgba(27,49,57,.07); padding:12px 14px; }
+  .zc .zh { display:flex; align-items:center; gap:9px; font-weight:700; font-size:15px; margin-bottom:8px; }
+  .zc .zh svg { width:26px; height:26px; }
+  .zc .zs { font-size:11.5px; color:var(--muted); margin:-4px 0 8px; }
+  .kv { display:flex; justify-content:space-between; gap:10px; font-family:ui-monospace,Menlo,monospace; font-size:12.5px;
+    padding:5px 8px; border-radius:6px; transition:background .4s, color .4s; }
+  .kv span:first-child { color:var(--muted); }
+  .kv b { font-weight:600; color:var(--navy); }
+  .mk.on { background:#FFE3DE; }
+  .mk.on span:first-child { color:var(--lava); }
+  .mk2.on { background:#E5EEF1; }
+  .bigv { font-size:30px; font-weight:700; color:var(--lava); margin-top:6px; }
+  .formula { font-family:ui-monospace,Menlo,monospace; font-size:13px; background:var(--wash); border-radius:6px; padding:8px; margin-top:8px; }
+  .tagsrc { font-size:10px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; padding:1px 6px; border-radius:4px; margin-left:6px; }
+  .tagsrc.req { background:#FFE3DE; color:var(--lava); } .tagsrc.lk { background:#E5EEF1; color:var(--navy); }
+
+  /* decision strip */
+  .dec { position:absolute; background:#fff; border:1px solid var(--line); border-top:4px solid var(--green); border-radius:12px;
+    box-shadow:0 2px 10px rgba(27,49,57,.07); padding:10px 16px; }
+  .dec .row { display:flex; align-items:center; justify-content:space-between; }
+  .dec .lbl { font-weight:700; font-size:15px; }
+  .dec .ok { background:var(--green); color:#fff; font-weight:700; font-size:14px; padding:4px 12px; border-radius:999px; letter-spacing:.04em; }
+  .zones { position:relative; display:flex; height:14px; margin:22px 0 6px; }
+  .zones i:first-of-type { border-radius:7px 0 0 7px; } .zones i:last-of-type { border-radius:0 7px 7px 0; }
+  .zones i { display:block; height:100%; }
+  .zticks { display:flex; font-size:11.5px; color:var(--muted); }
+  .zticks span { flex:1; }
+  .marker { position:absolute; top:-9px; width:3px; height:32px; background:var(--navy); border-radius:2px; }
+  .marker b { position:absolute; top:-18px; left:50%; transform:translateX(-50%); font-size:12px; color:var(--navy); white-space:nowrap; }
+  .dec .note { font-size:10.5px; color:var(--muted); }
+
+  .uclink { color:var(--uc); font-weight:700; text-decoration:none; border-bottom:1px solid currentColor; white-space:nowrap; }
+  .uclink:hover { color:var(--lava); }
+  .ep .bar .uclink { color:var(--peach); font-size:12px; font-weight:700; }
+  .hint { position:absolute; right:14px; bottom:8px; font-size:10.5px; color:#B8C2C8; }
+
+  /* boundary zones: Databricks vs your AWS account */
+  .zone { position:absolute; border:1.5px dashed var(--line2); border-radius:18px; background:#FCFDFD; }
+  .zone.dbx { border-color:#F7B4AA; background:#FFFBFA; }
+  .zone.aws { border-color:#9FB2BA; background:#F8FAFB; }
+  .zone .zl { position:absolute; top:-12px; left:18px; background:#fff; padding:2px 10px; border-radius:999px; font-size:11.5px;
+    font-weight:700; letter-spacing:.07em; text-transform:uppercase; border:1px solid var(--line); }
+  .zone.dbx .zl { color:var(--lava); border-color:#F7B4AA; } .zone.aws .zl { color:var(--navy); border-color:#9FB2BA; }
+  .wtag { display:inline-block; margin-top:10px; font-size:10.5px; font-weight:700; letter-spacing:.06em; text-transform:uppercase;
+    padding:3px 9px; border-radius:999px; }
+  .wtag.dbx { background:#FFE3DE; color:var(--lava); } .wtag.aws { background:#E5EEF1; color:var(--navy); }
+  .nocall { position:absolute; display:flex; align-items:center; gap:8px; padding:7px 12px; border-radius:999px; background:#fff;
+    border:1.5px solid var(--green); color:var(--green); font-size:12.5px; font-weight:700; white-space:nowrap; }
+  .nocall svg { width:16px; height:16px; }
+  .ep.tight .step { margin:8px 14px; padding:7px 12px; }
+  .back { display:inline-flex; align-items:center; justify-content:center; width:32px; height:32px; margin-right:4px; border-radius:50%;
+    border:1px solid var(--line); color:var(--muted); text-decoration:none; background:#fff; flex:0 0 32px; }
+  .back:hover { border-color:var(--line2); color:var(--navy); }
+  .back svg { width:15px; height:15px; }
+
+  /* added for this repo */
+  .node.v { flex-direction:column; align-items:flex-start; gap:8px; padding:14px 16px; }
+  .node.v .ico { flex:0 0 auto; }
+  .zone.sub { background:#FFFFFF; border-color:#B9C7CD; }
+  .zone.sub .zl { color:var(--muted); border-color:#B9C7CD; }
+  .zone .zl { color:var(--muted); }
+  .chip.note { border-color:var(--navy); color:var(--navy); font-weight:600; }
+  .li { display:flex; justify-content:space-between; align-items:center; gap:14px; font-size:14px; padding:9px 12px;
+    border-radius:8px; border:1px solid var(--line); background:var(--wash); margin-top:8px; }
+  .li span { font-weight:700; }
+  .li em { font-style:normal; color:var(--muted); font-size:13px; text-align:right; }
+  .zc.big .zh { font-size:17px; }
+  .zc.big .zh svg { width:30px; height:30px; }
+</style>
+</head>
+<body>
+<div id="fit"><div id="stage">
+
+  <div class="hdr" id="hdr">
+    <div class="brand"><a class="back" href="./" title="All architectures" aria-label="All architectures"><svg viewBox="0 0 24 24" fill="none"><path d="M15 5l-7 7 7 7" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></a><svg viewBox="0 0 300 331" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path d="M283.923 136.449L150.144 213.624L6.88995 131.168L0 134.982V194.844L150.144 281.115L283.923 204.234V235.926L150.144 313.1L6.88995 230.644L0 234.458V244.729L150.144 331L300 244.729V184.867L293.11 181.052L150.144 263.215L16.0766 186.334V154.643L150.144 231.524L300 145.253V86.2713L292.536 81.8697L150.144 163.739L22.9665 90.9663L150.144 17.8998L254.641 78.055L263.828 72.773V65.4371L150.144 0L0 86.2713V95.6613L150.144 181.933L283.923 104.758V136.449Z" fill="#FF3621"/>
+</svg><div class="t">PoC pipelines</div></div>
+    <div class="pills">
+      <div class="pill" data-p="0"><b>&#8635;</b>Overview</div>
+      <div class="pill" data-p="1"><b>1</b>Office Presence</div>
+      <div class="pill" data-p="2"><b>2</b>ClickUp</div>
+      <div class="pill" data-p="3"><b>3</b>Yield Mgmt</div>
+      <div class="pill" data-p="4"><b>4</b>Startlap Box CT</div>
+    </div>
+  </div>
+
+<section class="scene" data-scene="0" data-dur="8000">
+<div class="stitle rev" data-t="0"><div class="k">PoC pipelines</div><div class="h">Four Fabric workloads, rebuilt on Azure Databricks</div></div>
+<div class="blk rev" data-t="300" data-go="1" style="left:40px;width:290px"><div class="num">1</div><div class="bt">Office Presence</div><div class="bd">One SQL Server database, pulled</div><div class="icons"><svg viewBox="172 40 552 552" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g filter="url(#filter0_dddddd_1117_12211)">
+<path d="M192 196.45C192 120.538 253.538 59 329.45 59H566.55C642.462 59 704 120.538 704 196.45V433.55C704 509.462 642.462 571 566.55 571H329.45C253.538 571 192 509.462 192 433.55V196.45Z" fill="white"/>
+</g>
+<path d="M303.303 462.88L303.304 325.786L365.224 325.786L365.224 400.247L439.069 400.247L439.069 462.88L303.303 462.88Z" fill="#FABFBA"/>
+<path d="M592.088 173.313L592.087 310.407L530.166 310.407L530.167 235.947L456.322 235.947L456.322 173.313L592.088 173.313Z" fill="#FABFBA"/>
+<rect width="103.336" height="103.339" transform="matrix(1 0 5.39465e-06 1 303.305 173.313)" fill="#FF5F46"/>
+<rect width="103.336" height="103.339" transform="matrix(1 0 5.39465e-06 1 489.621 359.57)" fill="#FF5F46"/>
+<defs>
+<filter id="filter0_dddddd_1117_12211" x="0.639999" y="0.119995" width="894.72" height="894.72" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+<feFlood flood-opacity="0" result="BackgroundImageFix"/>
+<feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+<feOffset dy="3.68"/>
+<feGaussianBlur stdDeviation="2.76"/>
+<feColorMatrix type="matrix" values="0 0 0 0 0.105882 0 0 0 0 0.192157 0 0 0 0 0.223529 0 0 0 0.0196802 0"/>
+<feBlend mode="normal" in2="BackgroundImageFix" result="effect1_dropShadow_1117_12211"/>
+<feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+<feOffset dy="7.36"/>
+<feGaussianBlur stdDeviation="7.36"/>
+<feColorMatrix type="matrix" values="0 0 0 0 0.105882 0 0 0 0 0.192157 0 0 0 0 0.223529 0 0 0 0.04 0"/>
+<feBlend mode="normal" in2="effect1_dropShadow_1117_12211" result="effect2_dropShadow_1117_12211"/>
+<feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+<feOffset dy="16.56"/>
+<feGaussianBlur stdDeviation="11.96"/>
+<feColorMatrix type="matrix" values="0 0 0 0 0.105882 0 0 0 0 0.192157 0 0 0 0 0.223529 0 0 0 0.035 0"/>
+<feBlend mode="normal" in2="effect2_dropShadow_1117_12211" result="effect3_dropShadow_1117_12211"/>
+<feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+<feOffset dy="29.44"/>
+<feGaussianBlur stdDeviation="22.08"/>
+<feColorMatrix type="matrix" values="0 0 0 0 0.105882 0 0 0 0 0.192157 0 0 0 0 0.223529 0 0 0 0.04 0"/>
+<feBlend mode="normal" in2="effect3_dropShadow_1117_12211" result="effect4_dropShadow_1117_12211"/>
+<feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+<feOffset dy="58.88"/>
+<feGaussianBlur stdDeviation="36.8"/>
+<feColorMatrix type="matrix" values="0 0 0 0 0.105882 0 0 0 0 0.192157 0 0 0 0 0.223529 0 0 0 0.0503198 0"/>
+<feBlend mode="normal" in2="effect4_dropShadow_1117_12211" result="effect5_dropShadow_1117_12211"/>
+<feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+<feOffset dy="132.48"/>
+<feGaussianBlur stdDeviation="95.68"/>
+<feColorMatrix type="matrix" values="0 0 0 0 0.105882 0 0 0 0 0.192157 0 0 0 0 0.223529 0 0 0 0.07 0"/>
+<feBlend mode="normal" in2="effect5_dropShadow_1117_12211" result="effect6_dropShadow_1117_12211"/>
+<feBlend mode="normal" in="SourceGraphic" in2="effect6_dropShadow_1117_12211" result="shape"/>
+</filter>
+</defs>
+</svg><svg viewBox="0 0 150 150" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g clip-path="url(#clip0_3305_2125)">
+<path d="M68.37 74.16C68.37 95.05 85.3 111.98 106.19 111.98V126.76C77.14 126.76 53.6 103.21 53.6 74.17" stroke="#FF5F46" stroke-width="3" stroke-miterlimit="3"/>
+<path d="M68.37 74.16C68.37 53.27 51.44 36.34 30.55 36.34V21.56C59.6 21.56 83.14 45.11 83.14 74.15" stroke="#FF5F46" stroke-width="3" stroke-miterlimit="3"/>
+<path d="M53.59 74.16H44.22" stroke="#FF5F46" stroke-width="3" stroke-miterlimit="3"/>
+<path d="M92.49 74.16H83.12" stroke="#FF5F46" stroke-width="3" stroke-miterlimit="3"/>
+<path d="M53.59 74.16C53.59 61.42 43.29 51.1 30.55 51.1V57.85H18.82V47.14" stroke="#FF5F46" stroke-width="3" stroke-miterlimit="3"/>
+<path d="M30.55 21.56V15.67H18.82V25.27" stroke="#FF5F46" stroke-width="3" stroke-miterlimit="3"/>
+<path d="M126.94 128.97H139.18V116.73H126.94V122.85H117.92V132.66H106.18V126.75" stroke="#FF5F46" stroke-width="3" stroke-miterlimit="3"/>
+<path d="M117.92 99.98V121.87" stroke="#FF5F46" stroke-width="3" stroke-miterlimit="3"/>
+<path d="M83.14 74.16C83.14 86.9 93.44 97.22 106.18 97.22V91.39H117.91V107.88H125.76L132.47 95.3L139.18 107.88H130.56" stroke="#FF5F46" stroke-width="3" stroke-miterlimit="3"/>
+<path d="M21.92 32.01C20.61 30.28 18.53 29.16 16.19 29.16C12.23 29.16 9.01 32.37 9.01 36.34C9.01 40.31 12.22 43.52 16.19 43.52C20.16 43.52 23.37 40.31 23.37 36.34H30.55" stroke="#FF5F46" stroke-width="3" stroke-miterlimit="3"/>
+</g>
+<defs>
+<clipPath id="clip0_3305_2125">
+<rect width="150" height="150" fill="white"/>
+</clipPath>
+</defs>
+</svg><svg viewBox="0 0 512 512" fill="none"><rect x="72" y="56" width="368" height="400" rx="32" fill="#FABFBA"/><rect x="128" y="284" width="56" height="116" rx="8" fill="#FF5F46"/><rect x="228" y="204" width="56" height="196" rx="8" fill="#FF5F46"/><rect x="328" y="136" width="56" height="264" rx="8" fill="#FF5F46"/><rect x="128" y="112" width="140" height="28" rx="14" fill="#fff"/></svg></div><span class="wtag aws">Classic + serverless</span><div class="run"><div class="lbl">What runs</div><div><span>Ingestion</span><b>Lakeflow Connect</b></div><div><span>Serves</span><b>SQL warehouse</b></div></div></div>
+<div class="blk rev" data-t="900" data-go="2" style="left:340px;width:290px"><div class="num">2</div><div class="bt">ClickUp Workload</div><div class="bd">ClickUp API, pulled by your Python notebook</div><div class="icons"><svg viewBox="0 0 512 512" fill="none"><path d="M152 392C100 392 64 356 64 308C64 264 96 230 140 224C152 162 204 120 266 120C330 120 382 166 392 228C428 236 456 268 456 308C456 356 420 392 372 392Z" fill="#FABFBA"/><path d="M216 228L176 276L216 324M296 228L336 276L296 324" stroke="#FF5F46" stroke-width="28" stroke-linecap="round" stroke-linejoin="round"/></svg><svg viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path d="M220.408 401.342L362.785 257.242L220.408 113.143L220.408 56L299.582 56L299.582 136.544L314.387 142.792L370.291 85.8379L426.713 143.32L370.807 200.274L376.941 215.356H456.002V296.644H376.941L370.807 311.726L426.713 368.68L370.291 426.162L314.385 369.208L299.582 375.456L299.582 456H220.408L220.408 401.342Z" fill="#FABFBA"/>
+<path d="M156.584 100.984V100.722L308.78 256.001L156.584 411.281V411.004L141.711 426.159L85.2895 368.676L141.196 311.722L135.061 296.641H56V215.352H135.061L141.196 200.271L85.2895 143.317L141.711 85.8345L156.584 100.984Z" fill="#FF5F46"/>
+</svg><svg viewBox="0 0 512 512" fill="none"><rect x="72" y="56" width="368" height="400" rx="32" fill="#FABFBA"/><rect x="128" y="284" width="56" height="116" rx="8" fill="#FF5F46"/><rect x="228" y="204" width="56" height="196" rx="8" fill="#FF5F46"/><rect x="328" y="136" width="56" height="264" rx="8" fill="#FF5F46"/><rect x="128" y="112" width="140" height="28" rx="14" fill="#fff"/></svg></div><span class="wtag dbx">Serverless</span><div class="run"><div class="lbl">What runs</div><div><span>Ingestion</span><b>serverless job</b></div><div><span>VPN</span><b class="always">not needed</b></div></div></div>
+<div class="blk rev" data-t="1500" data-go="3" style="left:640px;width:290px"><div class="num">3</div><div class="bt">Yield Management</div><div class="bd">On-prem databases plus data in Fabric</div><div class="icons"><svg viewBox="0 0 512 512" fill="none"><path d="M80 176L256 64L432 176V448H80Z" fill="#FABFBA"/><rect x="144" y="216" width="224" height="56" rx="12" fill="#FF5F46"/><rect x="144" y="296" width="224" height="56" rx="12" fill="#FF5F46"/><rect x="144" y="376" width="224" height="56" rx="12" fill="#fff"/><circle cx="332" cy="244" r="10" fill="#fff"/><circle cx="332" cy="324" r="10" fill="#fff"/></svg><svg viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path d="M255.38 185.263L194.172 220.632V291.368L255.38 326.737L316.588 291.368V220.632L255.38 185.263Z" fill="#FF5F46"/>
+<path d="M384.434 181.579H454.86L419.462 120.421L384.434 181.579Z" fill="#FF5F46"/>
+<path d="M384.434 330.79L419.831 391.947L455.229 330.79H384.434Z" fill="#FF5F46"/>
+<path d="M219.98 466H290.407L255.009 404.842L219.98 466Z" fill="#FF5F46"/>
+<path d="M55.5312 330.79L90.9288 391.947L126.326 330.79H55.5312Z" fill="#FF5F46"/>
+<path d="M55.5312 181.579H125.958L90.5601 120.421L55.5312 181.579Z" fill="#FF5F46"/>
+<path d="M219.98 46L255.378 107.158L290.776 46H219.98Z" fill="#FF5F46"/>
+<path d="M322.487 58.1582L281.559 128.895L352.354 169.79L393.282 99.0529L322.487 58.1582Z" fill="#FABFBA"/>
+<path d="M460.392 215.105H378.535V296.895H460.392V215.105Z" fill="#FABFBA"/>
+<path d="M352.354 342.579L281.559 383.474L322.487 454.211L393.282 413.316L352.354 342.579Z" fill="#FABFBA"/>
+<path d="M158.038 342.579L117.109 413.316L187.905 454.211L228.833 383.474L158.038 342.579Z" fill="#FABFBA"/>
+<path d="M131.857 215.105H50V296.895H131.857V215.105Z" fill="#FABFBA"/>
+<path d="M187.905 58.1582L117.109 99.0529L158.038 169.79L228.833 128.895L187.905 58.1582Z" fill="#FABFBA"/>
+</svg><svg viewBox="0 0 512 512" fill="none"><rect x="72" y="56" width="368" height="400" rx="32" fill="#FABFBA"/><rect x="128" y="284" width="56" height="116" rx="8" fill="#FF5F46"/><rect x="228" y="204" width="56" height="196" rx="8" fill="#FF5F46"/><rect x="328" y="136" width="56" height="264" rx="8" fill="#FF5F46"/><rect x="128" y="112" width="140" height="28" rx="14" fill="#fff"/></svg></div><span class="wtag aws">Classic + serverless</span><div class="run"><div class="lbl">What runs</div><div><span>On-prem</span><b>classic, over VPN</b></div><div><span>Fabric</span><b>OneLake federation</b></div></div></div>
+<div class="blk rev" data-t="2100" data-go="4" style="left:940px;width:290px"><div class="num">4</div><div class="bt">Startlap Box CT</div><div class="bd">Daily history plus today, pushed every 10 minutes</div><div class="icons"><svg viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path d="M181.185 46C204.241 46 223.38 63.8165 225.026 86.8145L238 268H126L137.316 87.208C138.766 64.0446 157.976 46.0001 181.185 46ZM405.266 114C428.468 114 447.914 131.542 450.297 154.622L462 268H350L360.179 155.202C362.284 131.871 381.84 114 405.266 114Z" fill="#FF5F46"/>
+<path d="M338.996 424.79C337.367 448.002 318.062 466 294.793 466H294.792C271.695 465.999 252.471 448.258 250.623 425.234L238 268H350L338.996 424.79ZM128 268L120.132 380.564C118.973 397.143 105.185 410 88.5664 410C72.0694 410 58.3413 397.324 57.0264 380.88L48 268H128Z" fill="#FABFBA"/>
+</svg><svg viewBox="0 0 150 150" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path d="M126.77 25.11H23.23C21.2868 25.1126 19.4239 25.8857 18.0499 27.2598C16.6758 28.6339 15.9027 30.4968 15.9 32.44V47H122.45V44H18.9V32.44C18.9 31.2916 19.3562 30.1902 20.1683 29.3782C20.9803 28.5662 22.0816 28.11 23.23 28.11H126.77C127.918 28.11 129.02 28.5662 129.832 29.3782C130.644 30.1902 131.1 31.2916 131.1 32.44V117.56C131.1 118.708 130.644 119.81 129.832 120.622C129.02 121.434 127.918 121.89 126.77 121.89H23.23C22.0816 121.89 20.9803 121.434 20.1683 120.622C19.3562 119.81 18.9 118.708 18.9 117.56V58.26H15.9V117.56C15.9027 119.503 16.6758 121.366 18.0499 122.74C19.4239 124.114 21.2868 124.887 23.23 124.89H126.77C128.713 124.887 130.576 124.114 131.95 122.74C133.324 121.366 134.097 119.503 134.1 117.56V32.44C134.097 30.4968 133.324 28.6339 131.95 27.2598C130.576 25.8857 128.713 25.1126 126.77 25.11Z" fill="#FF5F46"/>
+<path d="M25.6 36.18C25.602 36.6364 25.7391 37.0821 25.9942 37.4606C26.2492 37.8392 26.6106 38.1337 27.0329 38.307C27.4552 38.4803 27.9193 38.5246 28.3668 38.4344C28.8142 38.3441 29.2249 38.1233 29.5469 37.7999C29.869 37.4764 30.088 37.0648 30.1763 36.617C30.2646 36.1692 30.2183 35.7052 30.0432 35.2837C29.8681 34.8622 29.572 34.502 29.1923 34.2486C28.8127 33.9952 28.3664 33.86 27.91 33.86C27.6058 33.86 27.3046 33.9201 27.0237 34.0368C26.7428 34.1535 26.4877 34.3245 26.273 34.5401C26.0584 34.7557 25.8885 35.0115 25.773 35.2929C25.6575 35.5743 25.5987 35.8758 25.6 36.18Z" fill="#FF5F46"/>
+<path d="M34.51 36.18C34.51 36.6388 34.6461 37.0874 34.901 37.4689C35.1559 37.8504 35.5183 38.1478 35.9422 38.3234C36.3661 38.499 36.8326 38.5449 37.2826 38.4554C37.7327 38.3659 38.146 38.1449 38.4705 37.8205C38.795 37.496 39.0159 37.0826 39.1054 36.6326C39.195 36.1826 39.149 35.7161 38.9734 35.2922C38.7978 34.8682 38.5005 34.5059 38.1189 34.251C37.7374 33.9961 37.2889 33.86 36.83 33.86C36.2147 33.86 35.6246 34.1044 35.1895 34.5395C34.7544 34.9746 34.51 35.5647 34.51 36.18Z" fill="#FF5F46"/>
+<path d="M43.4301 36.18C43.4301 36.6393 43.5664 37.0882 43.8218 37.47C44.0771 37.8517 44.44 38.149 44.8646 38.3243C45.2891 38.4996 45.756 38.545 46.2064 38.4547C46.6567 38.3643 47.07 38.1424 47.3941 37.8169C47.7181 37.4915 47.9383 37.0771 48.0267 36.6265C48.1151 36.1758 48.0677 35.709 47.8906 35.2852C47.7134 34.8615 47.4145 34.4998 47.0317 34.2461C46.6489 33.9924 46.1993 33.858 45.7401 33.86C45.1265 33.8627 44.5389 34.1082 44.106 34.543C43.6731 34.9778 43.43 35.5664 43.4301 36.18Z" fill="#FF5F46"/>
+<path d="M122.93 112.58V58.24H27.0699V112.58H30.0699V96.47H45.6399V112.58H48.6399V96.47H64.2199V112.58H67.2199V96.47H82.7899V112.58H85.7899V96.47H101.36V112.58H104.36V96.47H119.93V112.58H122.93ZM119.93 75.85H104.36V61.24H119.93V75.85ZM67.2199 61.24H82.7899V75.85H67.2199V61.24ZM64.2199 75.85H48.6399V61.24H64.2199V75.85ZM85.7899 61.24H101.36V75.85H85.7899V61.24ZM45.6399 61.24V75.85H30.0699V61.24H45.6399ZM30.0699 93.47V78.85H45.6399V93.47H30.0699ZM48.6399 93.47V78.85H64.2199V93.47H48.6399ZM67.2199 93.47V78.85H82.7899V93.47H67.2199ZM85.7899 93.47V78.85H101.36V93.47H85.7899ZM104.36 93.47V78.85H119.93V93.47H104.36Z" fill="#FF5F46"/>
+</svg><svg viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path fill-rule="evenodd" clip-rule="evenodd" d="M152 448L448 448V272L152 272C103.399 272 64 311.399 64 360C64 408.601 103.399 448 152 448ZM152 400C174.091 400 192 382.091 192 360C192 337.909 174.091 320 152 320C129.909 320 112 337.909 112 360C112 382.091 129.909 400 152 400Z" fill="#FF5F46"/>
+<path fill-rule="evenodd" clip-rule="evenodd" d="M360 240C408.601 240 448 200.601 448 152C448 103.399 408.601 64 360 64L64 64V240L360 240ZM360 192C382.091 192 400 174.091 400 152C400 129.909 382.091 112 360 112C337.909 112 320 129.909 320 152C320 174.091 337.909 192 360 192Z" fill="#FABFBA"/>
+</svg></div><span class="wtag dbx">Serverless</span><div class="run"><div class="lbl">What runs</div><div><span>Push</span><b>Zerobus Ingest</b></div><div><span>Queries</span><b>SQL warehouse</b></div></div></div>
+</section>
+
+<section class="scene" data-scene="1" data-dur="9500">
+<div class="stitle rev" data-t="0"><div class="k">1 &middot; Office Presence</div><div class="h">Office Presence: SQL Server to Power BI</div></div>
+<div class="zone  rev" data-t="0" style="left:24px;top:176px;width:218px;height:432px"><span class="zl">Source</span></div>
+<div class="zone dbx rev" data-t="0" style="left:262px;top:176px;width:730px;height:432px"><span class="zl">Azure Databricks</span></div>
+<div class="zone  rev" data-t="0" style="left:1012px;top:176px;width:244px;height:432px"><span class="zl">Power BI</span></div>
+<svg class="wires" viewBox="0 0 1280 720"><path id="p1" class="wire hot" pathLength="1" d="M 226 391 C 253 391, 253 283, 280 283" data-t="1600"/><path id="p2" class="wire" pathLength="1" d="M 378 358 L 378 432" data-t="3300"/><path id="p3" class="wire" pathLength="1" d="M 476 507 C 498 507, 498 391, 520 391" data-t="4900"/><path id="p4" class="wire" pathLength="1" d="M 716 391 C 739 391, 739 283, 762 283" data-t="5500"/><path id="p5" class="wire" pathLength="1" d="M 867 358 L 867 432" data-t="7100"/><path id="p6" class="wire hot" pathLength="1" d="M 972 507 C 1002 507, 1002 391, 1032 391" data-t="7600"/><circle class="pulse" r="5" data-t="1800"><animateMotion dur="1.2s" repeatCount="indefinite" begin="indefinite"><mpath href="#p1"/></animateMotion></circle><circle class="pulse" r="5" data-t="7800"><animateMotion dur="1.2s" repeatCount="indefinite" begin="indefinite"><mpath href="#p6"/></animateMotion></circle></svg>
+<div class="node ext v rev" data-t="300" style="left:40px;top:316px;width:186px;height:150px"><span class="badge">on-prem: to confirm</span><div class="ico"><svg viewBox="0 0 512 512" fill="none"><ellipse cx="256" cy="120" rx="160" ry="56" fill="#FF5F46"/><path d="M96 120V392C96 423 168 448 256 448C344 448 416 423 416 392V120C416 151 344 176 256 176C168 176 96 151 96 120Z" fill="#FABFBA"/><path d="M96 256C96 287 168 312 256 312C344 312 416 287 416 256" stroke="#FF5F46" stroke-width="24"/></svg></div><div><div class="name">SQL Server</div><div class="desc">Office Presence database, pulled</div></div></div>
+<div class="node db v rev" data-t="1300" style="left:280px;top:208px;width:196px;height:150px"><span class="badge on">classic, your VNet</span><div class="ico"><svg viewBox="172 40 552 552" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g filter="url(#filter0_dddddd_1117_12211)">
+<path d="M192 196.45C192 120.538 253.538 59 329.45 59H566.55C642.462 59 704 120.538 704 196.45V433.55C704 509.462 642.462 571 566.55 571H329.45C253.538 571 192 509.462 192 433.55V196.45Z" fill="white"/>
+</g>
+<path d="M303.303 462.88L303.304 325.786L365.224 325.786L365.224 400.247L439.069 400.247L439.069 462.88L303.303 462.88Z" fill="#FABFBA"/>
+<path d="M592.088 173.313L592.087 310.407L530.166 310.407L530.167 235.947L456.322 235.947L456.322 173.313L592.088 173.313Z" fill="#FABFBA"/>
+<rect width="103.336" height="103.339" transform="matrix(1 0 5.39465e-06 1 303.305 173.313)" fill="#FF5F46"/>
+<rect width="103.336" height="103.339" transform="matrix(1 0 5.39465e-06 1 489.621 359.57)" fill="#FF5F46"/>
+<defs>
+<filter id="filter0_dddddd_1117_12211" x="0.639999" y="0.119995" width="894.72" height="894.72" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+<feFlood flood-opacity="0" result="BackgroundImageFix"/>
+<feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+<feOffset dy="3.68"/>
+<feGaussianBlur stdDeviation="2.76"/>
+<feColorMatrix type="matrix" values="0 0 0 0 0.105882 0 0 0 0 0.192157 0 0 0 0 0.223529 0 0 0 0.0196802 0"/>
+<feBlend mode="normal" in2="BackgroundImageFix" result="effect1_dropShadow_1117_12211"/>
+<feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+<feOffset dy="7.36"/>
+<feGaussianBlur stdDeviation="7.36"/>
+<feColorMatrix type="matrix" values="0 0 0 0 0.105882 0 0 0 0 0.192157 0 0 0 0 0.223529 0 0 0 0.04 0"/>
+<feBlend mode="normal" in2="effect1_dropShadow_1117_12211" result="effect2_dropShadow_1117_12211"/>
+<feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+<feOffset dy="16.56"/>
+<feGaussianBlur stdDeviation="11.96"/>
+<feColorMatrix type="matrix" values="0 0 0 0 0.105882 0 0 0 0 0.192157 0 0 0 0 0.223529 0 0 0 0.035 0"/>
+<feBlend mode="normal" in2="effect2_dropShadow_1117_12211" result="effect3_dropShadow_1117_12211"/>
+<feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+<feOffset dy="29.44"/>
+<feGaussianBlur stdDeviation="22.08"/>
+<feColorMatrix type="matrix" values="0 0 0 0 0.105882 0 0 0 0 0.192157 0 0 0 0 0.223529 0 0 0 0.04 0"/>
+<feBlend mode="normal" in2="effect3_dropShadow_1117_12211" result="effect4_dropShadow_1117_12211"/>
+<feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+<feOffset dy="58.88"/>
+<feGaussianBlur stdDeviation="36.8"/>
+<feColorMatrix type="matrix" values="0 0 0 0 0.105882 0 0 0 0 0.192157 0 0 0 0 0.223529 0 0 0 0.0503198 0"/>
+<feBlend mode="normal" in2="effect4_dropShadow_1117_12211" result="effect5_dropShadow_1117_12211"/>
+<feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+<feOffset dy="132.48"/>
+<feGaussianBlur stdDeviation="95.68"/>
+<feColorMatrix type="matrix" values="0 0 0 0 0.105882 0 0 0 0 0.192157 0 0 0 0 0.223529 0 0 0 0.07 0"/>
+<feBlend mode="normal" in2="effect5_dropShadow_1117_12211" result="effect6_dropShadow_1117_12211"/>
+<feBlend mode="normal" in="SourceGraphic" in2="effect6_dropShadow_1117_12211" result="shape"/>
+</filter>
+</defs>
+</svg></div><div><div class="name">Ingestion gateway</div><div class="desc">Lakeflow Connect: reads changes with change tracking or CDC</div></div></div>
+<div class="node db v rev" data-t="3100" style="left:280px;top:432px;width:196px;height:150px"><span class="badge">serverless</span><div class="ico"><svg viewBox="172 40 552 552" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g filter="url(#filter0_dddddd_1117_12211)">
+<path d="M192 196.45C192 120.538 253.538 59 329.45 59H566.55C642.462 59 704 120.538 704 196.45V433.55C704 509.462 642.462 571 566.55 571H329.45C253.538 571 192 509.462 192 433.55V196.45Z" fill="white"/>
+</g>
+<path d="M303.303 462.88L303.304 325.786L365.224 325.786L365.224 400.247L439.069 400.247L439.069 462.88L303.303 462.88Z" fill="#FABFBA"/>
+<path d="M592.088 173.313L592.087 310.407L530.166 310.407L530.167 235.947L456.322 235.947L456.322 173.313L592.088 173.313Z" fill="#FABFBA"/>
+<rect width="103.336" height="103.339" transform="matrix(1 0 5.39465e-06 1 303.305 173.313)" fill="#FF5F46"/>
+<rect width="103.336" height="103.339" transform="matrix(1 0 5.39465e-06 1 489.621 359.57)" fill="#FF5F46"/>
+<defs>
+<filter id="filter0_dddddd_1117_12211" x="0.639999" y="0.119995" width="894.72" height="894.72" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+<feFlood flood-opacity="0" result="BackgroundImageFix"/>
+<feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+<feOffset dy="3.68"/>
+<feGaussianBlur stdDeviation="2.76"/>
+<feColorMatrix type="matrix" values="0 0 0 0 0.105882 0 0 0 0 0.192157 0 0 0 0 0.223529 0 0 0 0.0196802 0"/>
+<feBlend mode="normal" in2="BackgroundImageFix" result="effect1_dropShadow_1117_12211"/>
+<feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+<feOffset dy="7.36"/>
+<feGaussianBlur stdDeviation="7.36"/>
+<feColorMatrix type="matrix" values="0 0 0 0 0.105882 0 0 0 0 0.192157 0 0 0 0 0.223529 0 0 0 0.04 0"/>
+<feBlend mode="normal" in2="effect1_dropShadow_1117_12211" result="effect2_dropShadow_1117_12211"/>
+<feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+<feOffset dy="16.56"/>
+<feGaussianBlur stdDeviation="11.96"/>
+<feColorMatrix type="matrix" values="0 0 0 0 0.105882 0 0 0 0 0.192157 0 0 0 0 0.223529 0 0 0 0.035 0"/>
+<feBlend mode="normal" in2="effect2_dropShadow_1117_12211" result="effect3_dropShadow_1117_12211"/>
+<feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+<feOffset dy="29.44"/>
+<feGaussianBlur stdDeviation="22.08"/>
+<feColorMatrix type="matrix" values="0 0 0 0 0.105882 0 0 0 0 0.192157 0 0 0 0 0.223529 0 0 0 0.04 0"/>
+<feBlend mode="normal" in2="effect3_dropShadow_1117_12211" result="effect4_dropShadow_1117_12211"/>
+<feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+<feOffset dy="58.88"/>
+<feGaussianBlur stdDeviation="36.8"/>
+<feColorMatrix type="matrix" values="0 0 0 0 0.105882 0 0 0 0 0.192157 0 0 0 0 0.223529 0 0 0 0.0503198 0"/>
+<feBlend mode="normal" in2="effect4_dropShadow_1117_12211" result="effect5_dropShadow_1117_12211"/>
+<feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+<feOffset dy="132.48"/>
+<feGaussianBlur stdDeviation="95.68"/>
+<feColorMatrix type="matrix" values="0 0 0 0 0.105882 0 0 0 0 0.192157 0 0 0 0 0.223529 0 0 0 0.07 0"/>
+<feBlend mode="normal" in2="effect5_dropShadow_1117_12211" result="effect6_dropShadow_1117_12211"/>
+<feBlend mode="normal" in="SourceGraphic" in2="effect6_dropShadow_1117_12211" result="shape"/>
+</filter>
+</defs>
+</svg></div><div><div class="name">Ingestion pipeline</div><div class="desc">Applies the changes to streaming tables</div></div></div>
+<div class="node db v rev" data-t="4700" style="left:520px;top:316px;width:196px;height:150px"><span class="badge">serverless</span><div class="ico"><svg viewBox="0 0 150 150" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g clip-path="url(#clip0_3305_2125)">
+<path d="M68.37 74.16C68.37 95.05 85.3 111.98 106.19 111.98V126.76C77.14 126.76 53.6 103.21 53.6 74.17" stroke="#FF5F46" stroke-width="3" stroke-miterlimit="3"/>
+<path d="M68.37 74.16C68.37 53.27 51.44 36.34 30.55 36.34V21.56C59.6 21.56 83.14 45.11 83.14 74.15" stroke="#FF5F46" stroke-width="3" stroke-miterlimit="3"/>
+<path d="M53.59 74.16H44.22" stroke="#FF5F46" stroke-width="3" stroke-miterlimit="3"/>
+<path d="M92.49 74.16H83.12" stroke="#FF5F46" stroke-width="3" stroke-miterlimit="3"/>
+<path d="M53.59 74.16C53.59 61.42 43.29 51.1 30.55 51.1V57.85H18.82V47.14" stroke="#FF5F46" stroke-width="3" stroke-miterlimit="3"/>
+<path d="M30.55 21.56V15.67H18.82V25.27" stroke="#FF5F46" stroke-width="3" stroke-miterlimit="3"/>
+<path d="M126.94 128.97H139.18V116.73H126.94V122.85H117.92V132.66H106.18V126.75" stroke="#FF5F46" stroke-width="3" stroke-miterlimit="3"/>
+<path d="M117.92 99.98V121.87" stroke="#FF5F46" stroke-width="3" stroke-miterlimit="3"/>
+<path d="M83.14 74.16C83.14 86.9 93.44 97.22 106.18 97.22V91.39H117.91V107.88H125.76L132.47 95.3L139.18 107.88H130.56" stroke="#FF5F46" stroke-width="3" stroke-miterlimit="3"/>
+<path d="M21.92 32.01C20.61 30.28 18.53 29.16 16.19 29.16C12.23 29.16 9.01 32.37 9.01 36.34C9.01 40.31 12.22 43.52 16.19 43.52C20.16 43.52 23.37 40.31 23.37 36.34H30.55" stroke="#FF5F46" stroke-width="3" stroke-miterlimit="3"/>
+</g>
+<defs>
+<clipPath id="clip0_3305_2125">
+<rect width="150" height="150" fill="white"/>
+</clipPath>
+</defs>
+</svg></div><div><div class="name">Lakeflow pipeline</div><div class="desc">Silver and gold tables, with data quality checks</div></div></div>
+<div class="node db v rev" data-t="5300" style="left:762px;top:208px;width:210px;height:150px"><div class="ico"><svg viewBox="0 0 512 512" fill="none"><rect x="48" y="64" width="416" height="384" rx="36" fill="#FABFBA"/><rect x="112" y="272" width="64" height="112" rx="10" fill="#FF5F46"/><rect x="224" y="192" width="64" height="192" rx="10" fill="#FF5F46"/><rect x="336" y="128" width="64" height="256" rx="10" fill="#FF5F46"/><path d="M96 400H416" stroke="#fff" stroke-width="22" stroke-linecap="round"/></svg></div><div><div class="name">Metric view</div><div class="desc">Office Presence KPIs, defined once</div></div></div>
+<div class="node db v rev" data-t="6900" style="left:762px;top:432px;width:210px;height:150px"><span class="badge">serverless</span><div class="ico"><svg viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path fill-rule="evenodd" clip-rule="evenodd" d="M152 448L448 448V272L152 272C103.399 272 64 311.399 64 360C64 408.601 103.399 448 152 448ZM152 400C174.091 400 192 382.091 192 360C192 337.909 174.091 320 152 320C129.909 320 112 337.909 112 360C112 382.091 129.909 400 152 400Z" fill="#FF5F46"/>
+<path fill-rule="evenodd" clip-rule="evenodd" d="M360 240C408.601 240 448 200.601 448 152C448 103.399 408.601 64 360 64L64 64V240L360 240ZM360 192C382.091 192 400 174.091 400 152C400 129.909 382.091 112 360 112C337.909 112 320 129.909 320 152C320 174.091 337.909 192 360 192Z" fill="#FABFBA"/>
+</svg></div><div><div class="name">SQL warehouse</div><div class="desc">Serverless, serves Power BI</div></div></div>
+<div class="node ext v rev" data-t="7400" style="left:1032px;top:316px;width:208px;height:150px"><div class="ico"><svg viewBox="0 0 512 512" fill="none"><rect x="72" y="56" width="368" height="400" rx="32" fill="#FABFBA"/><rect x="128" y="284" width="56" height="116" rx="8" fill="#FF5F46"/><rect x="228" y="204" width="56" height="196" rx="8" fill="#FF5F46"/><rect x="328" y="136" width="56" height="264" rx="8" fill="#FF5F46"/><rect x="128" y="112" width="140" height="28" rx="14" fill="#fff"/></svg></div><div><div class="name">Office Presence report</div><div class="desc">DirectQuery or Import</div></div></div>
+</section>
+
+<section class="scene" data-scene="2" data-dur="8500">
+<div class="stitle rev" data-t="0"><div class="k">2 &middot; ClickUp Workload</div><div class="h">ClickUp Workload: API to Power BI, all serverless</div></div>
+<div class="zone  rev" data-t="0" style="left:24px;top:176px;width:218px;height:432px"><span class="zl">Source</span></div>
+<div class="zone dbx rev" data-t="0" style="left:262px;top:176px;width:730px;height:432px"><span class="zl">Azure Databricks</span></div>
+<div class="zone  rev" data-t="0" style="left:1012px;top:176px;width:244px;height:432px"><span class="zl">Power BI</span></div>
+<svg class="wires" viewBox="0 0 1280 720"><path id="q1" class="wire hot" pathLength="1" d="M 226 391 L 280 391" data-t="1600"/><path id="q2" class="wire" pathLength="1" d="M 476 391 L 520 391" data-t="3500"/><path id="q3" class="wire" pathLength="1" d="M 716 391 C 739 391, 739 283, 762 283" data-t="4900"/><path id="q4" class="wire" pathLength="1" d="M 867 358 L 867 432" data-t="5300"/><path id="q5" class="wire hot" pathLength="1" d="M 972 507 C 1002 507, 1002 391, 1032 391" data-t="5800"/><circle class="pulse" r="5" data-t="1800"><animateMotion dur="1.2s" repeatCount="indefinite" begin="indefinite"><mpath href="#q1"/></animateMotion></circle><circle class="pulse" r="5" data-t="6000"><animateMotion dur="1.2s" repeatCount="indefinite" begin="indefinite"><mpath href="#q5"/></animateMotion></circle></svg>
+<div class="node ext v rev" data-t="300" style="left:40px;top:316px;width:186px;height:150px"><div class="ico"><svg viewBox="0 0 512 512" fill="none"><path d="M152 392C100 392 64 356 64 308C64 264 96 230 140 224C152 162 204 120 266 120C330 120 382 166 392 228C428 236 456 268 456 308C456 356 420 392 372 392Z" fill="#FABFBA"/><path d="M216 228L176 276L216 324M296 228L336 276L296 324" stroke="#FF5F46" stroke-width="28" stroke-linecap="round" stroke-linejoin="round"/></svg></div><div><div class="name">ClickUp API</div><div class="desc">Tasks and workload, over REST</div></div></div>
+<div class="node db v rev" data-t="1300" style="left:280px;top:316px;width:196px;height:150px"><span class="badge on">serverless</span><div class="ico"><svg viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path d="M220.408 401.342L362.785 257.242L220.408 113.143L220.408 56L299.582 56L299.582 136.544L314.387 142.792L370.291 85.8379L426.713 143.32L370.807 200.274L376.941 215.356H456.002V296.644H376.941L370.807 311.726L426.713 368.68L370.291 426.162L314.385 369.208L299.582 375.456L299.582 456H220.408L220.408 401.342Z" fill="#FABFBA"/>
+<path d="M156.584 100.984V100.722L308.78 256.001L156.584 411.281V411.004L141.711 426.159L85.2895 368.676L141.196 311.722L135.061 296.641H56V215.352H135.061L141.196 200.271L85.2895 143.317L141.711 85.8345L156.584 100.984Z" fill="#FF5F46"/>
+</svg></div><div><div class="name">Lakeflow Job</div><div class="desc">Your Python notebook, on a schedule. Token in a secret scope</div></div></div>
+<div class="nocall rev" data-t="2300" style="left:280px;top:500px"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="#00A06B" stroke-width="2"/><path d="M7 12.5l3.2 3.2L17 9" stroke="#00A06B" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>No VPN needed: ClickUp is a public API</div>
+<div class="node db v rev" data-t="3300" style="left:520px;top:316px;width:196px;height:150px"><span class="badge">serverless</span><div class="ico"><svg viewBox="0 0 150 150" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g clip-path="url(#clip0_3305_2125)">
+<path d="M68.37 74.16C68.37 95.05 85.3 111.98 106.19 111.98V126.76C77.14 126.76 53.6 103.21 53.6 74.17" stroke="#FF5F46" stroke-width="3" stroke-miterlimit="3"/>
+<path d="M68.37 74.16C68.37 53.27 51.44 36.34 30.55 36.34V21.56C59.6 21.56 83.14 45.11 83.14 74.15" stroke="#FF5F46" stroke-width="3" stroke-miterlimit="3"/>
+<path d="M53.59 74.16H44.22" stroke="#FF5F46" stroke-width="3" stroke-miterlimit="3"/>
+<path d="M92.49 74.16H83.12" stroke="#FF5F46" stroke-width="3" stroke-miterlimit="3"/>
+<path d="M53.59 74.16C53.59 61.42 43.29 51.1 30.55 51.1V57.85H18.82V47.14" stroke="#FF5F46" stroke-width="3" stroke-miterlimit="3"/>
+<path d="M30.55 21.56V15.67H18.82V25.27" stroke="#FF5F46" stroke-width="3" stroke-miterlimit="3"/>
+<path d="M126.94 128.97H139.18V116.73H126.94V122.85H117.92V132.66H106.18V126.75" stroke="#FF5F46" stroke-width="3" stroke-miterlimit="3"/>
+<path d="M117.92 99.98V121.87" stroke="#FF5F46" stroke-width="3" stroke-miterlimit="3"/>
+<path d="M83.14 74.16C83.14 86.9 93.44 97.22 106.18 97.22V91.39H117.91V107.88H125.76L132.47 95.3L139.18 107.88H130.56" stroke="#FF5F46" stroke-width="3" stroke-miterlimit="3"/>
+<path d="M21.92 32.01C20.61 30.28 18.53 29.16 16.19 29.16C12.23 29.16 9.01 32.37 9.01 36.34C9.01 40.31 12.22 43.52 16.19 43.52C20.16 43.52 23.37 40.31 23.37 36.34H30.55" stroke="#FF5F46" stroke-width="3" stroke-miterlimit="3"/>
+</g>
+<defs>
+<clipPath id="clip0_3305_2125">
+<rect width="150" height="150" fill="white"/>
+</clipPath>
+</defs>
+</svg></div><div><div class="name">Lakeflow pipeline</div><div class="desc">Raw API responses to silver and gold</div></div></div>
+<div class="node db v rev" data-t="4700" style="left:762px;top:208px;width:210px;height:150px"><div class="ico"><svg viewBox="0 0 512 512" fill="none"><rect x="48" y="64" width="416" height="384" rx="36" fill="#FABFBA"/><rect x="112" y="272" width="64" height="112" rx="10" fill="#FF5F46"/><rect x="224" y="192" width="64" height="192" rx="10" fill="#FF5F46"/><rect x="336" y="128" width="64" height="256" rx="10" fill="#FF5F46"/><path d="M96 400H416" stroke="#fff" stroke-width="22" stroke-linecap="round"/></svg></div><div><div class="name">Metric view</div><div class="desc">Workload KPIs, defined once</div></div></div>
+<div class="node db v rev" data-t="5100" style="left:762px;top:432px;width:210px;height:150px"><span class="badge">serverless</span><div class="ico"><svg viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path fill-rule="evenodd" clip-rule="evenodd" d="M152 448L448 448V272L152 272C103.399 272 64 311.399 64 360C64 408.601 103.399 448 152 448ZM152 400C174.091 400 192 382.091 192 360C192 337.909 174.091 320 152 320C129.909 320 112 337.909 112 360C112 382.091 129.909 400 152 400Z" fill="#FF5F46"/>
+<path fill-rule="evenodd" clip-rule="evenodd" d="M360 240C408.601 240 448 200.601 448 152C448 103.399 408.601 64 360 64L64 64V240L360 240ZM360 192C382.091 192 400 174.091 400 152C400 129.909 382.091 112 360 112C337.909 112 320 129.909 320 152C320 174.091 337.909 192 360 192Z" fill="#FABFBA"/>
+</svg></div><div><div class="name">SQL warehouse</div><div class="desc">Serverless, serves Power BI</div></div></div>
+<div class="node ext v rev" data-t="5600" style="left:1032px;top:316px;width:208px;height:150px"><div class="ico"><svg viewBox="0 0 512 512" fill="none"><rect x="72" y="56" width="368" height="400" rx="32" fill="#FABFBA"/><rect x="128" y="284" width="56" height="116" rx="8" fill="#FF5F46"/><rect x="228" y="204" width="56" height="196" rx="8" fill="#FF5F46"/><rect x="328" y="136" width="56" height="264" rx="8" fill="#FF5F46"/><rect x="128" y="112" width="140" height="28" rx="14" fill="#fff"/></svg></div><div><div class="name">ClickUp Workload report</div><div class="desc">DirectQuery or Import</div></div></div>
+</section>
+
+<section class="scene" data-scene="3" data-dur="9500">
+<div class="stitle rev" data-t="0"><div class="k">3 &middot; Yield Management</div><div class="h">Yield Management: on-prem and Fabric, one model</div></div>
+<div class="zone  rev" data-t="0" style="left:24px;top:176px;width:218px;height:432px"><span class="zl">Sources</span></div>
+<div class="zone dbx rev" data-t="0" style="left:262px;top:176px;width:730px;height:432px"><span class="zl">Azure Databricks</span></div>
+<div class="zone  rev" data-t="0" style="left:1012px;top:176px;width:244px;height:432px"><span class="zl">Power BI</span></div>
+<svg class="wires" viewBox="0 0 1280 720"><path id="y1" class="wire hot" pathLength="1" d="M 226 283 L 280 283" data-t="1700"/><path id="y2" class="wire hot" pathLength="1" d="M 226 507 L 280 507" data-t="3300"/><path id="y3" class="wire" pathLength="1" d="M 476 283 C 498 283, 498 391, 520 391" data-t="4900"/><path id="y4" class="wire" pathLength="1" d="M 476 507 C 498 507, 498 391, 520 391" data-t="5000"/><path id="y5" class="wire" pathLength="1" d="M 716 391 C 739 391, 739 283, 762 283" data-t="6500"/><path id="y6" class="wire" pathLength="1" d="M 867 358 L 867 432" data-t="6900"/><path id="y7" class="wire hot" pathLength="1" d="M 972 507 C 1002 507, 1002 391, 1032 391" data-t="7400"/><circle class="pulse" r="5" data-t="1900"><animateMotion dur="1.2s" repeatCount="indefinite" begin="indefinite"><mpath href="#y1"/></animateMotion></circle><circle class="pulse" r="5" data-t="3500"><animateMotion dur="1.2s" repeatCount="indefinite" begin="indefinite"><mpath href="#y2"/></animateMotion></circle><circle class="pulse" r="5" data-t="7600"><animateMotion dur="1.2s" repeatCount="indefinite" begin="indefinite"><mpath href="#y7"/></animateMotion></circle></svg>
+<div class="node ext v rev" data-t="300" style="left:40px;top:208px;width:186px;height:150px"><div class="ico"><svg viewBox="0 0 512 512" fill="none"><path d="M80 176L256 64L432 176V448H80Z" fill="#FABFBA"/><rect x="144" y="216" width="224" height="56" rx="12" fill="#FF5F46"/><rect x="144" y="296" width="224" height="56" rx="12" fill="#FF5F46"/><rect x="144" y="376" width="224" height="56" rx="12" fill="#fff"/><circle cx="332" cy="244" r="10" fill="#fff"/><circle cx="332" cy="324" r="10" fill="#fff"/></svg></div><div><div class="name">On-prem databases</div><div class="desc">Several sources, pulled over the VPN</div></div></div>
+<div class="node ext v rev" data-t="400" style="left:40px;top:432px;width:186px;height:150px"><span class="badge">to confirm</span><div class="ico"><svg viewBox="0 0 512 512" fill="none"><rect x="72" y="72" width="168" height="168" rx="28" fill="#FF5F46"/><rect x="272" y="72" width="168" height="168" rx="28" fill="#FABFBA"/><rect x="72" y="272" width="168" height="168" rx="28" fill="#FABFBA"/><rect x="272" y="272" width="168" height="168" rx="28" fill="#FABFBA"/></svg></div><div><div class="name">Fabric data</div><div class="desc">Lakehouse or Warehouse in OneLake</div></div></div>
+<div class="node db v rev" data-t="1500" style="left:280px;top:208px;width:196px;height:150px"><span class="badge on">classic, your VNet</span><div class="ico"><svg viewBox="172 40 552 552" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g filter="url(#filter0_dddddd_1117_12211)">
+<path d="M192 196.45C192 120.538 253.538 59 329.45 59H566.55C642.462 59 704 120.538 704 196.45V433.55C704 509.462 642.462 571 566.55 571H329.45C253.538 571 192 509.462 192 433.55V196.45Z" fill="white"/>
+</g>
+<path d="M303.303 462.88L303.304 325.786L365.224 325.786L365.224 400.247L439.069 400.247L439.069 462.88L303.303 462.88Z" fill="#FABFBA"/>
+<path d="M592.088 173.313L592.087 310.407L530.166 310.407L530.167 235.947L456.322 235.947L456.322 173.313L592.088 173.313Z" fill="#FABFBA"/>
+<rect width="103.336" height="103.339" transform="matrix(1 0 5.39465e-06 1 303.305 173.313)" fill="#FF5F46"/>
+<rect width="103.336" height="103.339" transform="matrix(1 0 5.39465e-06 1 489.621 359.57)" fill="#FF5F46"/>
+<defs>
+<filter id="filter0_dddddd_1117_12211" x="0.639999" y="0.119995" width="894.72" height="894.72" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+<feFlood flood-opacity="0" result="BackgroundImageFix"/>
+<feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+<feOffset dy="3.68"/>
+<feGaussianBlur stdDeviation="2.76"/>
+<feColorMatrix type="matrix" values="0 0 0 0 0.105882 0 0 0 0 0.192157 0 0 0 0 0.223529 0 0 0 0.0196802 0"/>
+<feBlend mode="normal" in2="BackgroundImageFix" result="effect1_dropShadow_1117_12211"/>
+<feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+<feOffset dy="7.36"/>
+<feGaussianBlur stdDeviation="7.36"/>
+<feColorMatrix type="matrix" values="0 0 0 0 0.105882 0 0 0 0 0.192157 0 0 0 0 0.223529 0 0 0 0.04 0"/>
+<feBlend mode="normal" in2="effect1_dropShadow_1117_12211" result="effect2_dropShadow_1117_12211"/>
+<feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+<feOffset dy="16.56"/>
+<feGaussianBlur stdDeviation="11.96"/>
+<feColorMatrix type="matrix" values="0 0 0 0 0.105882 0 0 0 0 0.192157 0 0 0 0 0.223529 0 0 0 0.035 0"/>
+<feBlend mode="normal" in2="effect2_dropShadow_1117_12211" result="effect3_dropShadow_1117_12211"/>
+<feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+<feOffset dy="29.44"/>
+<feGaussianBlur stdDeviation="22.08"/>
+<feColorMatrix type="matrix" values="0 0 0 0 0.105882 0 0 0 0 0.192157 0 0 0 0 0.223529 0 0 0 0.04 0"/>
+<feBlend mode="normal" in2="effect3_dropShadow_1117_12211" result="effect4_dropShadow_1117_12211"/>
+<feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+<feOffset dy="58.88"/>
+<feGaussianBlur stdDeviation="36.8"/>
+<feColorMatrix type="matrix" values="0 0 0 0 0.105882 0 0 0 0 0.192157 0 0 0 0 0.223529 0 0 0 0.0503198 0"/>
+<feBlend mode="normal" in2="effect4_dropShadow_1117_12211" result="effect5_dropShadow_1117_12211"/>
+<feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+<feOffset dy="132.48"/>
+<feGaussianBlur stdDeviation="95.68"/>
+<feColorMatrix type="matrix" values="0 0 0 0 0.105882 0 0 0 0 0.192157 0 0 0 0 0.223529 0 0 0 0.07 0"/>
+<feBlend mode="normal" in2="effect5_dropShadow_1117_12211" result="effect6_dropShadow_1117_12211"/>
+<feBlend mode="normal" in="SourceGraphic" in2="effect6_dropShadow_1117_12211" result="shape"/>
+</filter>
+</defs>
+</svg></div><div><div class="name">Lakeflow Connect</div><div class="desc">Or JDBC, on classic compute in your VNet</div></div></div>
+<div class="node db v rev" data-t="3100" style="left:280px;top:432px;width:196px;height:150px"><div class="ico"><svg viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path d="M255.38 185.263L194.172 220.632V291.368L255.38 326.737L316.588 291.368V220.632L255.38 185.263Z" fill="#FF5F46"/>
+<path d="M384.434 181.579H454.86L419.462 120.421L384.434 181.579Z" fill="#FF5F46"/>
+<path d="M384.434 330.79L419.831 391.947L455.229 330.79H384.434Z" fill="#FF5F46"/>
+<path d="M219.98 466H290.407L255.009 404.842L219.98 466Z" fill="#FF5F46"/>
+<path d="M55.5312 330.79L90.9288 391.947L126.326 330.79H55.5312Z" fill="#FF5F46"/>
+<path d="M55.5312 181.579H125.958L90.5601 120.421L55.5312 181.579Z" fill="#FF5F46"/>
+<path d="M219.98 46L255.378 107.158L290.776 46H219.98Z" fill="#FF5F46"/>
+<path d="M322.487 58.1582L281.559 128.895L352.354 169.79L393.282 99.0529L322.487 58.1582Z" fill="#FABFBA"/>
+<path d="M460.392 215.105H378.535V296.895H460.392V215.105Z" fill="#FABFBA"/>
+<path d="M352.354 342.579L281.559 383.474L322.487 454.211L393.282 413.316L352.354 342.579Z" fill="#FABFBA"/>
+<path d="M158.038 342.579L117.109 413.316L187.905 454.211L228.833 383.474L158.038 342.579Z" fill="#FABFBA"/>
+<path d="M131.857 215.105H50V296.895H131.857V215.105Z" fill="#FABFBA"/>
+<path d="M187.905 58.1582L117.109 99.0529L158.038 169.79L228.833 128.895L187.905 58.1582Z" fill="#FABFBA"/>
+</svg></div><div><div class="name">OneLake federation</div><div class="desc">Foreign catalog in Unity Catalog: read-only, no copy</div></div></div>
+<div class="node db v rev" data-t="4700" style="left:520px;top:316px;width:196px;height:150px"><span class="badge">serverless</span><div class="ico"><svg viewBox="0 0 150 150" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g clip-path="url(#clip0_3305_2125)">
+<path d="M68.37 74.16C68.37 95.05 85.3 111.98 106.19 111.98V126.76C77.14 126.76 53.6 103.21 53.6 74.17" stroke="#FF5F46" stroke-width="3" stroke-miterlimit="3"/>
+<path d="M68.37 74.16C68.37 53.27 51.44 36.34 30.55 36.34V21.56C59.6 21.56 83.14 45.11 83.14 74.15" stroke="#FF5F46" stroke-width="3" stroke-miterlimit="3"/>
+<path d="M53.59 74.16H44.22" stroke="#FF5F46" stroke-width="3" stroke-miterlimit="3"/>
+<path d="M92.49 74.16H83.12" stroke="#FF5F46" stroke-width="3" stroke-miterlimit="3"/>
+<path d="M53.59 74.16C53.59 61.42 43.29 51.1 30.55 51.1V57.85H18.82V47.14" stroke="#FF5F46" stroke-width="3" stroke-miterlimit="3"/>
+<path d="M30.55 21.56V15.67H18.82V25.27" stroke="#FF5F46" stroke-width="3" stroke-miterlimit="3"/>
+<path d="M126.94 128.97H139.18V116.73H126.94V122.85H117.92V132.66H106.18V126.75" stroke="#FF5F46" stroke-width="3" stroke-miterlimit="3"/>
+<path d="M117.92 99.98V121.87" stroke="#FF5F46" stroke-width="3" stroke-miterlimit="3"/>
+<path d="M83.14 74.16C83.14 86.9 93.44 97.22 106.18 97.22V91.39H117.91V107.88H125.76L132.47 95.3L139.18 107.88H130.56" stroke="#FF5F46" stroke-width="3" stroke-miterlimit="3"/>
+<path d="M21.92 32.01C20.61 30.28 18.53 29.16 16.19 29.16C12.23 29.16 9.01 32.37 9.01 36.34C9.01 40.31 12.22 43.52 16.19 43.52C20.16 43.52 23.37 40.31 23.37 36.34H30.55" stroke="#FF5F46" stroke-width="3" stroke-miterlimit="3"/>
+</g>
+<defs>
+<clipPath id="clip0_3305_2125">
+<rect width="150" height="150" fill="white"/>
+</clipPath>
+</defs>
+</svg></div><div><div class="name">Lakeflow pipeline</div><div class="desc">Joins all sources into one yield model</div></div></div>
+<div class="node db v rev" data-t="6300" style="left:762px;top:208px;width:210px;height:150px"><div class="ico"><svg viewBox="0 0 512 512" fill="none"><rect x="48" y="64" width="416" height="384" rx="36" fill="#FABFBA"/><rect x="112" y="272" width="64" height="112" rx="10" fill="#FF5F46"/><rect x="224" y="192" width="64" height="192" rx="10" fill="#FF5F46"/><rect x="336" y="128" width="64" height="256" rx="10" fill="#FF5F46"/><path d="M96 400H416" stroke="#fff" stroke-width="22" stroke-linecap="round"/></svg></div><div><div class="name">Metric views</div><div class="desc">Yield KPIs, one definition for every report</div></div></div>
+<div class="node db v rev" data-t="6700" style="left:762px;top:432px;width:210px;height:150px"><span class="badge">serverless</span><div class="ico"><svg viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path fill-rule="evenodd" clip-rule="evenodd" d="M152 448L448 448V272L152 272C103.399 272 64 311.399 64 360C64 408.601 103.399 448 152 448ZM152 400C174.091 400 192 382.091 192 360C192 337.909 174.091 320 152 320C129.909 320 112 337.909 112 360C112 382.091 129.909 400 152 400Z" fill="#FF5F46"/>
+<path fill-rule="evenodd" clip-rule="evenodd" d="M360 240C408.601 240 448 200.601 448 152C448 103.399 408.601 64 360 64L64 64V240L360 240ZM360 192C382.091 192 400 174.091 400 152C400 129.909 382.091 112 360 112C337.909 112 320 129.909 320 152C320 174.091 337.909 192 360 192Z" fill="#FABFBA"/>
+</svg></div><div><div class="name">SQL warehouse</div><div class="desc">Serverless, serves Power BI</div></div></div>
+<div class="node ext v rev" data-t="7200" style="left:1032px;top:316px;width:208px;height:150px"><div class="ico"><svg viewBox="0 0 512 512" fill="none"><rect x="72" y="56" width="368" height="400" rx="32" fill="#FABFBA"/><rect x="128" y="284" width="56" height="116" rx="8" fill="#FF5F46"/><rect x="228" y="204" width="56" height="196" rx="8" fill="#FF5F46"/><rect x="328" y="136" width="56" height="264" rx="8" fill="#FF5F46"/><rect x="128" y="112" width="140" height="28" rx="14" fill="#fff"/></svg></div><div><div class="name">Yield Management report</div><div class="desc">DirectQuery or Import</div></div></div>
+</section>
+
+<section class="scene" data-scene="4" data-dur="9500">
+<div class="stitle rev" data-t="0"><div class="k">4 &middot; Startlap Box CT</div><div class="h">Startlap Box CT: history plus today, always current</div></div>
+<div class="zone  rev" data-t="0" style="left:24px;top:176px;width:218px;height:432px"><span class="zl">Source</span></div>
+<div class="zone dbx rev" data-t="0" style="left:262px;top:176px;width:730px;height:432px"><span class="zl">Azure Databricks</span></div>
+<div class="zone  rev" data-t="0" style="left:1012px;top:176px;width:244px;height:432px"><span class="zl">Power BI</span></div>
+<svg class="wires" viewBox="0 0 1280 720"><path id="z1" class="wire hot" pathLength="1" d="M 226 391 C 253 391, 253 283, 280 283" data-t="1500"/><path id="z2" class="wire hot" pathLength="1" d="M 476 283 L 520 283" data-t="2200"/><path id="z3" class="wire" pathLength="1" d="M 560 358 C 560 400, 420 390, 420 432" data-t="3400"/><path id="z4" class="wire" pathLength="1" d="M 476 507 L 520 507" data-t="3900"/><path id="z5" class="wire hot" pathLength="1" d="M 716 283 L 762 283" data-t="5300"/><path id="z6" class="wire" pathLength="1" d="M 716 507 C 739 507, 739 305, 762 305" data-t="5500"/><path id="z7" class="wire" pathLength="1" d="M 867 358 L 867 432" data-t="6900"/><path id="z8" class="wire hot" pathLength="1" d="M 972 507 C 1002 507, 1002 391, 1032 391" data-t="7400"/><circle class="pulse" r="5" data-t="1700"><animateMotion dur="1.0s" repeatCount="indefinite" begin="indefinite"><mpath href="#z1"/></animateMotion></circle><circle class="pulse" r="5" data-t="2400"><animateMotion dur="0.8s" repeatCount="indefinite" begin="indefinite"><mpath href="#z2"/></animateMotion></circle><circle class="pulse" r="5" data-t="5600"><animateMotion dur="0.8s" repeatCount="indefinite" begin="indefinite"><mpath href="#z5"/></animateMotion></circle><circle class="pulse" r="5" data-t="7600"><animateMotion dur="1.2s" repeatCount="indefinite" begin="indefinite"><mpath href="#z8"/></animateMotion></circle></svg>
+<div class="node ext v rev" data-t="300" style="left:40px;top:316px;width:186px;height:150px"><span class="badge">to confirm</span><div class="ico"><svg viewBox="0 0 512 512" fill="none"><ellipse cx="256" cy="120" rx="160" ry="56" fill="#FF5F46"/><path d="M96 120V392C96 423 168 448 256 448C344 448 416 423 416 392V120C416 151 344 176 256 176C168 176 96 151 96 120Z" fill="#FABFBA"/><path d="M96 256C96 287 168 312 256 312C344 312 416 287 416 256" stroke="#FF5F46" stroke-width="24"/></svg></div><div><div class="name">Your producer</div><div class="desc">Pushes today's records every 10 minutes</div></div></div>
+<div class="node db v rev" data-t="1300" style="left:280px;top:208px;width:196px;height:150px"><span class="badge on">serverless</span><div class="ico"><svg viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path d="M181.185 46C204.241 46 223.38 63.8165 225.026 86.8145L238 268H126L137.316 87.208C138.766 64.0446 157.976 46.0001 181.185 46ZM405.266 114C428.468 114 447.914 131.542 450.297 154.622L462 268H350L360.179 155.202C362.284 131.871 381.84 114 405.266 114Z" fill="#FF5F46"/>
+<path d="M338.996 424.79C337.367 448.002 318.062 466 294.793 466H294.792C271.695 465.999 252.471 448.258 250.623 425.234L238 268H350L338.996 424.79ZM128 268L120.132 380.564C118.973 397.143 105.185 410 88.5664 410C72.0694 410 58.3413 397.324 57.0264 380.88L48 268H128Z" fill="#FABFBA"/>
+</svg></div><div><div class="name">Zerobus Ingest</div><div class="desc">Push API (SDK or REST): records land in Delta within seconds</div></div></div>
+<div class="node db v rev" data-t="2000" style="left:520px;top:208px;width:196px;height:150px"><div class="ico"><svg viewBox="0 0 150 150" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path d="M126.77 25.11H23.23C21.2868 25.1126 19.4239 25.8857 18.0499 27.2598C16.6758 28.6339 15.9027 30.4968 15.9 32.44V47H122.45V44H18.9V32.44C18.9 31.2916 19.3562 30.1902 20.1683 29.3782C20.9803 28.5662 22.0816 28.11 23.23 28.11H126.77C127.918 28.11 129.02 28.5662 129.832 29.3782C130.644 30.1902 131.1 31.2916 131.1 32.44V117.56C131.1 118.708 130.644 119.81 129.832 120.622C129.02 121.434 127.918 121.89 126.77 121.89H23.23C22.0816 121.89 20.9803 121.434 20.1683 120.622C19.3562 119.81 18.9 118.708 18.9 117.56V58.26H15.9V117.56C15.9027 119.503 16.6758 121.366 18.0499 122.74C19.4239 124.114 21.2868 124.887 23.23 124.89H126.77C128.713 124.887 130.576 124.114 131.95 122.74C133.324 121.366 134.097 119.503 134.1 117.56V32.44C134.097 30.4968 133.324 28.6339 131.95 27.2598C130.576 25.8857 128.713 25.1126 126.77 25.11Z" fill="#FF5F46"/>
+<path d="M25.6 36.18C25.602 36.6364 25.7391 37.0821 25.9942 37.4606C26.2492 37.8392 26.6106 38.1337 27.0329 38.307C27.4552 38.4803 27.9193 38.5246 28.3668 38.4344C28.8142 38.3441 29.2249 38.1233 29.5469 37.7999C29.869 37.4764 30.088 37.0648 30.1763 36.617C30.2646 36.1692 30.2183 35.7052 30.0432 35.2837C29.8681 34.8622 29.572 34.502 29.1923 34.2486C28.8127 33.9952 28.3664 33.86 27.91 33.86C27.6058 33.86 27.3046 33.9201 27.0237 34.0368C26.7428 34.1535 26.4877 34.3245 26.273 34.5401C26.0584 34.7557 25.8885 35.0115 25.773 35.2929C25.6575 35.5743 25.5987 35.8758 25.6 36.18Z" fill="#FF5F46"/>
+<path d="M34.51 36.18C34.51 36.6388 34.6461 37.0874 34.901 37.4689C35.1559 37.8504 35.5183 38.1478 35.9422 38.3234C36.3661 38.499 36.8326 38.5449 37.2826 38.4554C37.7327 38.3659 38.146 38.1449 38.4705 37.8205C38.795 37.496 39.0159 37.0826 39.1054 36.6326C39.195 36.1826 39.149 35.7161 38.9734 35.2922C38.7978 34.8682 38.5005 34.5059 38.1189 34.251C37.7374 33.9961 37.2889 33.86 36.83 33.86C36.2147 33.86 35.6246 34.1044 35.1895 34.5395C34.7544 34.9746 34.51 35.5647 34.51 36.18Z" fill="#FF5F46"/>
+<path d="M43.4301 36.18C43.4301 36.6393 43.5664 37.0882 43.8218 37.47C44.0771 37.8517 44.44 38.149 44.8646 38.3243C45.2891 38.4996 45.756 38.545 46.2064 38.4547C46.6567 38.3643 47.07 38.1424 47.3941 37.8169C47.7181 37.4915 47.9383 37.0771 48.0267 36.6265C48.1151 36.1758 48.0677 35.709 47.8906 35.2852C47.7134 34.8615 47.4145 34.4998 47.0317 34.2461C46.6489 33.9924 46.1993 33.858 45.7401 33.86C45.1265 33.8627 44.5389 34.1082 44.106 34.543C43.6731 34.9778 43.43 35.5664 43.4301 36.18Z" fill="#FF5F46"/>
+<path d="M122.93 112.58V58.24H27.0699V112.58H30.0699V96.47H45.6399V112.58H48.6399V96.47H64.2199V112.58H67.2199V96.47H82.7899V112.58H85.7899V96.47H101.36V112.58H104.36V96.47H119.93V112.58H122.93ZM119.93 75.85H104.36V61.24H119.93V75.85ZM67.2199 61.24H82.7899V75.85H67.2199V61.24ZM64.2199 75.85H48.6399V61.24H64.2199V75.85ZM85.7899 61.24H101.36V75.85H85.7899V61.24ZM45.6399 61.24V75.85H30.0699V61.24H45.6399ZM30.0699 93.47V78.85H45.6399V93.47H30.0699ZM48.6399 93.47V78.85H64.2199V93.47H48.6399ZM67.2199 93.47V78.85H82.7899V93.47H67.2199ZM85.7899 93.47V78.85H101.36V93.47H85.7899ZM104.36 93.47V78.85H119.93V93.47H104.36Z" fill="#FF5F46"/>
+</svg></div><div><div class="name">today</div><div class="desc">Today's records, updated every 10 minutes</div></div></div>
+<div class="node db v rev" data-t="3600" style="left:280px;top:432px;width:196px;height:150px"><span class="badge">on schedule</span><div class="ico"><svg viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path d="M220.408 401.342L362.785 257.242L220.408 113.143L220.408 56L299.582 56L299.582 136.544L314.387 142.792L370.291 85.8379L426.713 143.32L370.807 200.274L376.941 215.356H456.002V296.644H376.941L370.807 311.726L426.713 368.68L370.291 426.162L314.385 369.208L299.582 375.456L299.582 456H220.408L220.408 401.342Z" fill="#FABFBA"/>
+<path d="M156.584 100.984V100.722L308.78 256.001L156.584 411.281V411.004L141.711 426.159L85.2895 368.676L141.196 311.722L135.061 296.641H56V215.352H135.061L141.196 200.271L85.2895 143.317L141.711 85.8345L156.584 100.984Z" fill="#FF5F46"/>
+</svg></div><div><div class="name">Nightly job</div><div class="desc">Moves the closed day into history</div></div></div>
+<div class="node db v rev" data-t="4100" style="left:520px;top:432px;width:196px;height:150px"><div class="ico"><svg viewBox="0 0 150 150" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path d="M126.77 25.11H23.23C21.2868 25.1126 19.4239 25.8857 18.0499 27.2598C16.6758 28.6339 15.9027 30.4968 15.9 32.44V47H122.45V44H18.9V32.44C18.9 31.2916 19.3562 30.1902 20.1683 29.3782C20.9803 28.5662 22.0816 28.11 23.23 28.11H126.77C127.918 28.11 129.02 28.5662 129.832 29.3782C130.644 30.1902 131.1 31.2916 131.1 32.44V117.56C131.1 118.708 130.644 119.81 129.832 120.622C129.02 121.434 127.918 121.89 126.77 121.89H23.23C22.0816 121.89 20.9803 121.434 20.1683 120.622C19.3562 119.81 18.9 118.708 18.9 117.56V58.26H15.9V117.56C15.9027 119.503 16.6758 121.366 18.0499 122.74C19.4239 124.114 21.2868 124.887 23.23 124.89H126.77C128.713 124.887 130.576 124.114 131.95 122.74C133.324 121.366 134.097 119.503 134.1 117.56V32.44C134.097 30.4968 133.324 28.6339 131.95 27.2598C130.576 25.8857 128.713 25.1126 126.77 25.11Z" fill="#FF5F46"/>
+<path d="M25.6 36.18C25.602 36.6364 25.7391 37.0821 25.9942 37.4606C26.2492 37.8392 26.6106 38.1337 27.0329 38.307C27.4552 38.4803 27.9193 38.5246 28.3668 38.4344C28.8142 38.3441 29.2249 38.1233 29.5469 37.7999C29.869 37.4764 30.088 37.0648 30.1763 36.617C30.2646 36.1692 30.2183 35.7052 30.0432 35.2837C29.8681 34.8622 29.572 34.502 29.1923 34.2486C28.8127 33.9952 28.3664 33.86 27.91 33.86C27.6058 33.86 27.3046 33.9201 27.0237 34.0368C26.7428 34.1535 26.4877 34.3245 26.273 34.5401C26.0584 34.7557 25.8885 35.0115 25.773 35.2929C25.6575 35.5743 25.5987 35.8758 25.6 36.18Z" fill="#FF5F46"/>
+<path d="M34.51 36.18C34.51 36.6388 34.6461 37.0874 34.901 37.4689C35.1559 37.8504 35.5183 38.1478 35.9422 38.3234C36.3661 38.499 36.8326 38.5449 37.2826 38.4554C37.7327 38.3659 38.146 38.1449 38.4705 37.8205C38.795 37.496 39.0159 37.0826 39.1054 36.6326C39.195 36.1826 39.149 35.7161 38.9734 35.2922C38.7978 34.8682 38.5005 34.5059 38.1189 34.251C37.7374 33.9961 37.2889 33.86 36.83 33.86C36.2147 33.86 35.6246 34.1044 35.1895 34.5395C34.7544 34.9746 34.51 35.5647 34.51 36.18Z" fill="#FF5F46"/>
+<path d="M43.4301 36.18C43.4301 36.6393 43.5664 37.0882 43.8218 37.47C44.0771 37.8517 44.44 38.149 44.8646 38.3243C45.2891 38.4996 45.756 38.545 46.2064 38.4547C46.6567 38.3643 47.07 38.1424 47.3941 37.8169C47.7181 37.4915 47.9383 37.0771 48.0267 36.6265C48.1151 36.1758 48.0677 35.709 47.8906 35.2852C47.7134 34.8615 47.4145 34.4998 47.0317 34.2461C46.6489 33.9924 46.1993 33.858 45.7401 33.86C45.1265 33.8627 44.5389 34.1082 44.106 34.543C43.6731 34.9778 43.43 35.5664 43.4301 36.18Z" fill="#FF5F46"/>
+<path d="M122.93 112.58V58.24H27.0699V112.58H30.0699V96.47H45.6399V112.58H48.6399V96.47H64.2199V112.58H67.2199V96.47H82.7899V112.58H85.7899V96.47H101.36V112.58H104.36V96.47H119.93V112.58H122.93ZM119.93 75.85H104.36V61.24H119.93V75.85ZM67.2199 61.24H82.7899V75.85H67.2199V61.24ZM64.2199 75.85H48.6399V61.24H64.2199V75.85ZM85.7899 61.24H101.36V75.85H85.7899V61.24ZM45.6399 61.24V75.85H30.0699V61.24H45.6399ZM30.0699 93.47V78.85H45.6399V93.47H30.0699ZM48.6399 93.47V78.85H64.2199V93.47H48.6399ZM67.2199 93.47V78.85H82.7899V93.47H67.2199ZM85.7899 93.47V78.85H101.36V93.47H85.7899ZM104.36 93.47V78.85H119.93V93.47H104.36Z" fill="#FF5F46"/>
+</svg></div><div><div class="name">history</div><div class="desc">All days up to yesterday</div></div></div>
+<div class="node db v rev" data-t="5100" style="left:762px;top:208px;width:210px;height:150px"><div class="ico"><svg viewBox="0 0 512 512" fill="none"><rect x="48" y="112" width="152" height="288" rx="28" fill="#FABFBA"/><rect x="312" y="112" width="152" height="288" rx="28" fill="#FABFBA"/><path d="M216 208H296M268 176L300 208L268 240" stroke="#FF5F46" stroke-width="30" stroke-linecap="round" stroke-linejoin="round"/><path d="M296 304H216M244 272L212 304L244 336" stroke="#FF5F46" stroke-width="30" stroke-linecap="round" stroke-linejoin="round"/></svg></div><div><div class="name">Lambda view</div><div class="desc">history UNION ALL today: one source for the report</div></div></div>
+<div class="node db v rev" data-t="6700" style="left:762px;top:432px;width:210px;height:150px"><span class="badge">serverless</span><div class="ico"><svg viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path fill-rule="evenodd" clip-rule="evenodd" d="M152 448L448 448V272L152 272C103.399 272 64 311.399 64 360C64 408.601 103.399 448 152 448ZM152 400C174.091 400 192 382.091 192 360C192 337.909 174.091 320 152 320C129.909 320 112 337.909 112 360C112 382.091 129.909 400 152 400Z" fill="#FF5F46"/>
+<path fill-rule="evenodd" clip-rule="evenodd" d="M360 240C408.601 240 448 200.601 448 152C448 103.399 408.601 64 360 64L64 64V240L360 240ZM360 192C382.091 192 400 174.091 400 152C400 129.909 382.091 112 360 112C337.909 112 320 129.909 320 152C320 174.091 337.909 192 360 192Z" fill="#FABFBA"/>
+</svg></div><div><div class="name">SQL warehouse</div><div class="desc">Serverless. Lakehouse//RT (Beta) if many users</div></div></div>
+<div class="node ext v rev" data-t="7200" style="left:1032px;top:316px;width:208px;height:150px"><div class="ico"><svg viewBox="0 0 512 512" fill="none"><rect x="72" y="56" width="368" height="400" rx="32" fill="#FABFBA"/><rect x="128" y="284" width="56" height="116" rx="8" fill="#FF5F46"/><rect x="228" y="204" width="56" height="196" rx="8" fill="#FF5F46"/><rect x="328" y="136" width="56" height="264" rx="8" fill="#FF5F46"/><rect x="128" y="112" width="140" height="28" rx="14" fill="#fff"/></svg></div><div><div class="name">Startlap Box CT report</div><div class="desc">DirectQuery: always current</div></div></div>
+</section>
+
+  <div class="cap"><div class="bar"></div><div class="txt" id="cap"></div></div>
+  <div class="hint">Space: pause &nbsp; Left/Right: part</div>
+</div></div>
+
+<script>
+const CAPS = {
+  0: [[0, 'Four Fabric workloads, rebuilt <b>end to end</b> on Azure Databricks']],
+  1: [[0, 'Office Presence: one <b>SQL Server</b> database, pulled'],
+      [1200, 'Lakeflow Connect: the <b>gateway runs on classic compute</b> in your VNet, over the VPN'],
+      [3000, 'A <b>serverless</b> ingestion pipeline applies the changes to Delta tables'],
+      [4600, 'A Lakeflow pipeline builds <b>silver and gold</b>; a metric view defines the KPIs'],
+      [6800, 'Power BI queries a <b>serverless SQL warehouse</b>']],
+  2: [[0, 'ClickUp Workload: data pulled from the <b>ClickUp API</b>'],
+      [1200, 'Your Python notebook runs as a <b>serverless Lakeflow Job</b>, on a schedule'],
+      [3200, 'A Lakeflow pipeline turns the raw responses into <b>silver and gold</b>'],
+      [4600, 'A metric view defines the KPIs; Power BI queries the <b>SQL warehouse</b>']],
+  3: [[0, 'Yield Management: <b>several sources</b>, on-prem and in Fabric'],
+      [1400, 'On-prem databases come in over the VPN, on <b>classic compute</b>'],
+      [3000, 'Fabric data is read in place with <b>OneLake catalog federation</b>: no copy'],
+      [4600, 'One Lakeflow pipeline joins them into a <b>single yield model</b>'],
+      [6200, 'Metric views keep <b>one definition</b> per KPI for Power BI']],
+  4: [[0, 'Startlap Box CT: today\'s records are <b>pushed every 10 minutes</b>'],
+      [1200, '<b>Zerobus Ingest</b> writes them straight into a Delta table, within seconds'],
+      [3200, 'A nightly job moves the closed day into <b>history</b>'],
+      [5000, 'The <b>lambda view</b> unions history and today: one source for the report'],
+      [6600, 'Frequent DirectQuery hits a <b>serverless SQL warehouse</b>']]
+};
+const scenes = [...document.querySelectorAll('.scene')];
+const capEl = document.getElementById('cap');
+const MODE = new URLSearchParams(location.search).get('mode') || 'present';
+let cur = -1, step = 0, timers = [], paused = false;
+
+function clearTimers(){ timers.forEach(clearTimeout); timers = []; }
+function setCap(html, instant){
+  if (instant){ capEl.innerHTML = html; capEl.style.opacity = 1; return; }
+  capEl.style.opacity = 0; setTimeout(() => { capEl.innerHTML = html; capEl.style.opacity = 1; }, 250);
+}
+function reveal(el){
+  el.classList.add('on');
+  if (el.tagName === 'path' && el.classList.contains('wire')) el.setAttribute('marker-end', 'url(#' + (el.classList.contains('hot') ? 'ah' : 'ag') + ')');
+  const am = el.querySelector && el.querySelector('animateMotion');
+  if (am) am.beginElement();
+}
+function reset(sc){
+  sc.querySelectorAll('.rev,.wire,.wlabel,.pulse,.mk,.mk2').forEach(e => { e.classList.remove('on'); if (e.tagName === 'path') e.removeAttribute('marker-end'); });
+}
+function pills(i){
+  document.querySelectorAll('.pill').forEach(p => {
+    const n = +p.dataset.p; p.classList.toggle('cur', n === i); p.classList.toggle('done', n < i);
+  });
+}
+function enter(i){
+  clearTimers();
+  scenes.forEach(s => s.classList.remove('show'));
+  const sc = scenes[i]; reset(sc); sc.classList.add('show'); cur = i; pills(i);
+  return sc;
+}
+function bounds(i){ return (CAPS[i] || [[0, '']]).map(c => c[0]); }
+function stepEls(sc, i, k){
+  const b = bounds(i), lo = b[k], hi = k + 1 < b.length ? b[k + 1] : Infinity;
+  return [...sc.querySelectorAll('[data-t]')].filter(e => +e.dataset.t >= lo && +e.dataset.t < hi).map(e => [e, +e.dataset.t - lo]);
+}
+
+/* auto mode: timed playback, loops */
+function show(i, staticMode){
+  const sc = enter(i);
+  const els = [...sc.querySelectorAll('[data-t]')];
+  if (staticMode){ els.forEach(reveal); const c = CAPS[i]; capEl.innerHTML = c[c.length-1][1]; return; }
+  els.forEach(e => timers.push(setTimeout(() => reveal(e), +e.dataset.t + 200)));
+  (CAPS[i] || []).forEach(([t, html]) => timers.push(setTimeout(() => setCap(html), t)));
+  timers.push(setTimeout(() => { if (!paused) show((i + 1) % scenes.length); }, +sc.dataset.dur));
+}
+
+/* presenter mode: one key press = one step */
+function present(i, k, animate){
+  const sc = (i !== cur || !animate) ? enter(i) : scenes[i];
+  clearTimers(); step = k;
+  if (!animate){
+    for (let j = 0; j <= k; j++) stepEls(sc, i, j).forEach(([e]) => reveal(e));
+  } else {
+    // finish earlier steps instantly (a fast key press must not leave anything hidden), then animate this step
+    for (let j = 0; j < k; j++) stepEls(sc, i, j).forEach(([e]) => { if (!e.classList.contains('on')) reveal(e); });
+    stepEls(sc, i, k).forEach(([e, d]) => timers.push(setTimeout(() => reveal(e), d + 150)));
+  }
+  setCap(CAPS[i][k][1], !animate);
+  progress();
+}
+function next(){
+  if (step + 1 < bounds(cur).length) present(cur, step + 1, true);
+  else if (cur + 1 < scenes.length) { enter(cur + 1); present(cur, 0, true); }
+}
+function prev(){
+  if (step > 0) present(cur, step - 1, false);
+  else if (cur > 0) present(cur - 1, bounds(cur - 1).length - 1, false);
+}
+function partName(i){
+  const p = document.querySelector('.pill[data-p="' + i + '"]');
+  return p ? p.lastChild.textContent.trim() : 'Part ' + i;
+}
+function progress(){
+  const h = document.querySelector('.hint'); if (!h || MODE !== 'present') return;
+  h.textContent = partName(cur) + '  ' + (step + 1) + '/' + bounds(cur).length + '   ·   click a tab, or use the arrow keys';
+}
+
+// arrow markers
+const svgns = 'http://www.w3.org/2000/svg';
+const defs = document.createElementNS(svgns, 'svg'); defs.setAttribute('width', 0); defs.setAttribute('height', 0); defs.style.position = 'absolute';
+defs.innerHTML = '<defs><marker id="ag" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#CDD5DB"/></marker><marker id="ah" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#FF3621"/></marker></defs>';
+document.body.prepend(defs);
+
+function fit(){ const s = Math.min(innerWidth / 1280, innerHeight / 720); document.getElementById('stage').style.transform = 'scale(' + s + ')'; }
+addEventListener('resize', fit); fit();
+addEventListener('keydown', e => {
+  if (MODE === 'present'){
+    if (['ArrowRight','Space','PageDown','Enter','ArrowDown'].includes(e.code)){ e.preventDefault(); next(); }
+    if (['ArrowLeft','PageUp','Backspace','ArrowUp'].includes(e.code)){ e.preventDefault(); prev(); }
+    if (/^Digit[0-9]$/.test(e.code) && +e.code.slice(5) < scenes.length) { const i = +e.code.slice(5); enter(i); present(i, bounds(i).length - 1, false); }
+    if (e.code === 'Home') { enter(0); present(0, 0, true); }
+    if (e.code === 'KeyR') { const i = cur; enter(i); present(i, 0, true); }
+    return;
+  }
+  if (e.code === 'Space'){ paused = !paused; if (!paused) show(cur); }
+  if (e.code === 'ArrowRight') show((cur + 1) % scenes.length);
+  if (e.code === 'ArrowLeft') show((cur - 1 + scenes.length) % scenes.length);
+  if (/^Digit[0-9]$/.test(e.code) && +e.code.slice(5) < scenes.length) show(+e.code.slice(5));
+});
+if (MODE === 'present') addEventListener('click', next);
+// links open in a new tab without advancing the presentation
+document.querySelectorAll('a.uclink').forEach(a => a.addEventListener('click', e => e.stopPropagation()));
+// overview cards open their part
+document.querySelectorAll('.blk[data-go]').forEach(c => c.addEventListener('click', e => {
+  e.stopPropagation();
+  const i = +c.dataset.go;
+  if (MODE === 'present') { enter(i); present(i, bounds(i).length - 1, false); } else { paused = true; show(i, true); }
+}));
+// tabs: click to open a part immediately, fully shown
+document.querySelectorAll('.pill').forEach(p => p.addEventListener('click', e => {
+  e.stopPropagation();
+  const i = +p.dataset.p;
+  if (MODE === 'present') { enter(i); present(i, bounds(i).length - 1, false); }
+  else { paused = true; show(i, true); }
+}));
+const q = new URLSearchParams(location.search);
+if (q.has('nohint')) document.querySelector('.hint').style.display = 'none';
+const first = q.has('scene') ? +q.get('scene') : 0;
+if (MODE === 'present') { enter(first); present(first, 0, true); }
+else show(first, q.has('static'));
+</script>
+</body>
+</html>
