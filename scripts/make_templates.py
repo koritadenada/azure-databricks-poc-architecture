@@ -170,7 +170,7 @@ def li(name, detail, t):
 net.append(scene(4, 8000,
     title("4 &middot; Setup checklist", "What to set up, and when"),
     f'<div class="zc big rev" data-t="300" style="left:40px;top:196px;width:590px;border-top-color:var(--navy)">'
-    f'<div class="zh">{{{{I_CHECK}}}}For the PoC</div>'
+    '<div class="zh"><svg viewBox="0 0 512 512" fill="none"><rect x="96" y="56" width="320" height="400" rx="32" fill="#CDEFE2"/><path d="M150 170L190 210L262 138" stroke="#00A06B" stroke-width="30" stroke-linecap="round" stroke-linejoin="round"/><rect x="290" y="160" width="80" height="26" rx="13" fill="#fff"/><path d="M150 330L190 370L262 298" stroke="#00A06B" stroke-width="30" stroke-linecap="round" stroke-linejoin="round"/><rect x="290" y="318" width="80" height="26" rx="13" fill="#fff"/></svg>For the PoC</div>'
     + li("Premium workspace, VNet injection", "two subnets in your VNet", 900)
     + li("Secure cluster connectivity", "no public IPs on the clusters", 1200)
     + li("Peering to your hub", "use remote gateways / gateway transit", 1500)
