@@ -1,0 +1,23 @@
+<!DOCTYPE html><html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+ body{margin:0;background:#fff;font-family:"DM Sans",Arial,sans-serif;color:#1B3139}
+ .wrap{width:1800px;height:588px;box-sizing:border-box;padding:44px 70px}
+ h1{font-size:40px;margin:0 0 28px;font-weight:700}
+ table{width:100%;border-collapse:separate;border-spacing:0;border:2px solid #E2E6EA;border-radius:18px;overflow:hidden;font-size:26px}
+ th{background:#1B3139;color:#fff;text-align:left;padding:18px 26px;font-weight:700}
+ td{padding:20px 26px;border-top:2px solid #E2E6EA}
+ td:first-child{font-weight:700;width:300px}
+ td:last-child,th:last-child{text-align:right;width:140px;font-weight:700}
+ td:last-child{color:#FF3621}
+ .foot{margin-top:22px;font-size:22px;color:#5A6B72}
+</style></head><body><div class="wrap">
+ <h1>How the ingestion pipeline DBUs are estimated</h1>
+ <table>
+  <tr><th></th><th>Calculation</th><th>DBU</th></tr>
+  <tr><td>One-time load</td><td>200 GB / 70 GB per DBU (data) + 10 DBU (a few pipeline updates for the snapshot)</td><td>12.9</td></tr>
+  <tr><td>Option A, hourly</td><td>24 runs/day x 30 days x 0.25 DBU per run + 75 GB/month / 70</td><td>181</td></tr>
+  <tr><td>Option B, daily</td><td>1 run/day x 30 days x 0.25 DBU per run + 75 GB/month / 70</td><td>8.6</td></tr>
+ </table>
+ <div class="foot">Mostly per-run work, not data volume. Fully covered by the 100 free Lakeflow Connect DBUs per workspace per day.</div>
+</div></body></html>
