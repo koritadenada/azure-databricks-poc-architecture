@@ -1,0 +1,32 @@
+<!DOCTYPE html><html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+ body{margin:0;background:#fff;font-family:"DM Sans",Arial,sans-serif;color:#1B3139}
+ .wrap{width:1800px;box-sizing:border-box;padding:44px 70px 40px}
+ h1{font-size:40px;margin:0 0 26px;font-weight:700}
+ table{width:100%;border-collapse:separate;border-spacing:0;border:2px solid #E2E6EA;border-radius:18px;overflow:hidden;font-size:23px;line-height:1.35}
+ th{background:#1B3139;color:#fff;text-align:left;padding:16px 22px;font-weight:700;font-size:24px}
+ th.lfc{box-shadow:inset 0 -6px 0 #FF3621}
+ td{padding:14px 22px;border-top:2px solid #E2E6EA;vertical-align:top}
+ td:first-child{font-weight:700;width:270px;background:#F5F7F9}
+ td.good{color:#1B3139} td.meh{color:#5A6B72}
+ .foot{margin-top:22px;font-size:23px;color:#5A6B72;line-height:1.4}
+ .foot b{color:#1B3139}
+</style></head><body><div class="wrap">
+ <h1>Lakeflow Connect vs a classic JDBC job</h1>
+ <table>
+  <tr><th></th><th class="lfc">Lakeflow Connect (SQL Server / PostgreSQL)</th><th>Classic JDBC job</th></tr>
+  <tr><td>Incremental loads</td><td class="good">Built in: reads change tracking or CDC, so only changed rows</td><td class="meh">Custom: watermark columns, merge logic, state</td></tr>
+  <tr><td>Deletes</td><td class="good">Captured automatically</td><td class="meh">Lost unless soft-delete or full-compare logic is built</td></tr>
+  <tr><td>History (SCD Type 2)</td><td class="good">A setting per table</td><td class="meh">Custom code</td></tr>
+  <tr><td>Schema changes</td><td class="good">New and dropped columns handled automatically</td><td class="meh">Job breaks or needs code changes</td></tr>
+  <tr><td>Initial + incremental load</td><td class="good">One setup: snapshot first, then changes</td><td class="meh">Two code paths to build and maintain</td></tr>
+  <tr><td>Load on the source</td><td class="good">Light: reads the change logs</td><td class="meh">Repeated queries or scans on the database</td></tr>
+  <tr><td>Recovery</td><td class="good">Resumes where it stopped; automatic full refresh if change logs expire</td><td class="meh">Custom retry and backfill logic</td></tr>
+  <tr><td>Effort</td><td class="good">Point-and-click or a small configuration file, no code</td><td class="meh">One notebook per source to maintain</td></tr>
+  <tr><td>Cost</td><td class="good">Daily triggered pull about $9 / month; always-on gateway about $447 / month. Mostly Azure VMs: the DBUs of one source server are covered by the free tier (100 DBUs per day)</td><td class="meh">A few minutes of a small classic cluster per day: about $5 to $10 / month (DBUs + VMs), no free tier</td></tr>
+  <tr><td>Prerequisites</td><td class="good">Change tracking or CDC on the source tables; primary instance; gateway driver of at least 8 cores</td><td class="meh">Read access over JDBC</td></tr>
+  <tr><td>Network</td><td class="good">Gateway in your VNet, over the site-to-site VPN</td><td class="meh">Classic cluster in your VNet, over the site-to-site VPN</td></tr>
+ </table>
+ <div class="foot"><b>For daily loads both cost about $10 per month.</b> Lakeflow Connect replaces the hand-written incremental, delete and schema logic. JDBC remains useful for small reference tables or sources without a Lakeflow Connect connector.</div>
+</div></body></html>
