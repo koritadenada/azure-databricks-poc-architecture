@@ -1,0 +1,38 @@
+<!DOCTYPE html><html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+ body{margin:0;background:#fff;font-family:"DM Sans",Arial,sans-serif;color:#1B3139}
+ .wrap{width:1800px;height:920px;box-sizing:border-box;padding:56px 70px;display:flex;flex-direction:column}
+ h1{font-size:44px;margin:0 0 36px;font-weight:700;letter-spacing:-.01em}
+ .row{display:flex;align-items:center;gap:0;flex:1}
+ .card{flex:1;height:520px;border:2px solid #E2E6EA;border-top:10px solid #CDD5DB;border-radius:22px;padding:34px 32px;box-sizing:border-box;
+       box-shadow:0 6px 22px rgba(27,49,57,.08);background:#fff;display:flex;flex-direction:column}
+ .card.dbx{border-top-color:#FF3621}
+ .card.ext{background:#F5F7F9}
+ .n{flex:0 0 58px;width:58px;height:58px;border-radius:50%;background:#1B3139;color:#fff;font-weight:700;font-size:28px;display:flex;align-items:center;justify-content:center}
+ .t{font-size:36px;font-weight:700;margin-top:26px;line-height:1.15}
+ .tag{display:inline-block;margin-top:16px;font-size:20px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:6px 14px;border-radius:999px;align-self:flex-start}
+ .tag.c{background:#E5EEF1;color:#1B3139}.tag.s{background:#FFE3DE;color:#FF3621}
+ .d{font-size:26px;color:#5A6B72;margin-top:22px;line-height:1.4}
+ .arrow{width:86px;flex:0 0 86px;display:flex;flex-direction:column;align-items:center;justify-content:center}
+ .arrow svg{width:70px;height:40px}
+ .arrow span{font-size:19px;color:#5A6B72;margin-top:8px;text-align:center;line-height:1.2}
+ .foot{margin-top:30px;font-size:24px;color:#5A6B72}
+ .foot b{color:#1B3139}
+</style></head><body><div class="wrap">
+ <h1>How Lakeflow Connect loads a database</h1>
+ <div class="row">
+  <div class="card ext"><div class="n">1</div><div class="t">SQL Server</div><span class="tag c">On-premises</span>
+   <div class="d">Your source database, reached over the site-to-site VPN</div></div>
+  <div class="arrow"><svg viewBox="0 0 70 40"><path d="M2 20H60M46 6l16 14-16 14" stroke="#FF3621" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg><span>VPN</span></div>
+  <div class="card dbx"><div class="n">2</div><div class="t">Ingestion gateway</div><span class="tag c">Classic, in your VNet</span>
+   <div class="d">Reads the changes (change tracking or CDC) and writes them to a staging area in Unity Catalog</div></div>
+  <div class="arrow"><svg viewBox="0 0 70 40"><path d="M2 20H60M46 6l16 14-16 14" stroke="#FF3621" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+  <div class="card dbx"><div class="n">3</div><div class="t">Ingestion pipeline</div><span class="tag s">Serverless</span>
+   <div class="d">Applies the staged changes to Delta tables: inserts, updates, deletes, optional history (SCD Type 2)</div></div>
+  <div class="arrow"><svg viewBox="0 0 70 40"><path d="M2 20H60M46 6l16 14-16 14" stroke="#FF3621" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+  <div class="card dbx"><div class="n">4</div><div class="t">Delta tables</div><span class="tag s">Unity Catalog</span>
+   <div class="d">Governed tables, ready for transformations and Power BI</div></div>
+ </div>
+ <div class="foot"><b>Billing:</b> the gateway uses Databricks DBUs plus Azure VMs; the ingestion pipeline uses serverless DBUs. Both count toward the 100 free Lakeflow Connect DBUs per workspace per day.</div>
+</div></body></html>
